@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 学院学生综合服务与党团管理平台 Demo
 
 这是根据《学院学生综合服务与党团管理平台-软件需求策划书》整理出的本地可运行初版演示系统。当前版本以课程展示和部署截图为目标，采用零依赖静态前端加 Node 本地服务。
@@ -38,3 +39,6 @@ $env:PORT=8080; npm start
 ## 部署建议
 
 最简单的部署方式是把整个目录上传到服务器，安装 Node.js 后执行 `npm start`。也可以直接把 `index.html`、`styles.css`、`script.js` 放到 Nginx、Apache 或任意静态站点服务目录中。
+=======
+# Student-Services-and-Party-Youth-League-Management-Platform
+>>>>>>> fcd7221bf289d3bb703e4e5799ccc9d52a1363fd
