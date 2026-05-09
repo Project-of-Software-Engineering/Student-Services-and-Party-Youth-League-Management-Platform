@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学院学生综合服务与党团管理平台 Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">院</div>
+        <div>
+          <strong>学院服务平台</strong>
+          <span>学生事务与党团管理</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="active" data-view="student">学生端</button>
+        <button data-view="admin">管理端</button>
+        <button data-view="leader">领导看板</button>
+      </nav>
+      <div class="role-box">
+        <span>当前角色</span>
+        <strong id="roleName">学生：李明</strong>
+      </div>
+    </aside>
+
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">软件工程导论课程项目初版 Demo</p>
+          <h1>学院学生综合服务与党团管理平台</h1>
+        </div>
+        <div class="status-pill">
+          <span></span>
+          本地演示环境运行中
+        </div>
+      </header>
+
+      <section id="student" class="view active">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">统一入口</p>
+            <h2>查询政策、查看流程、提交申请、接收提醒</h2>
+            <p>面向学生的轻量入口，覆盖需求文档中的 P0 核心功能，并保留 P1 事项演示。</p>
+          </div>
+          <div class="quick-grid">
+            <button data-scroll="knowledge">政策问答</button>
+            <button data-scroll="process">党团流程</button>
+            <button data-scroll="apply">在线申请</button>
+            <button data-scroll="profile">个人画像</button>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel" id="knowledge">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">P0 政策知识库</p>
+                <h3>智能问答</h3>
+              </div>
+              <span class="tag">可维护</span>
+            </div>
+            <div class="search-row">
+              <input id="questionInput" value="奖学金申请需要什么材料？" />
+              <button id="askBtn">查询</button>
+            </div>
+            <div id="answerBox" class="answer"></div>
+          </section>
+
+          <section class="panel" id="process">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">P0 党团流程</p>
+                <h3>入党流程进度</h3>
+              </div>
+              <span class="tag warning">节点提醒</span>
+            </div>
+            <ol class="timeline" id="timeline"></ol>
+          </section>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel" id="apply">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">P1 审批流</p>
+                <h3>电子证明申请</h3>
+              </div>
+              <span class="tag">留痕</span>
+            </div>
+            <form id="applyForm" class="form">
+              <label>申请类型<select name="type"><option>在读证明</option><option>请假申请</option><option>党团材料证明</option></select></label>
+              <label>申请原因<textarea name="reason">用于课程项目演示与材料归档。</textarea></label>
+              <button type="submit">提交申请</button>
+            </form>
+            <div id="applyResult" class="notice">最近申请：在读证明，状态为辅导员待审核。</div>
+          </section>
+
+          <section class="panel" id="profile">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">P1 学生画像</p>
+                <h3>李明 / 2023级软件工程</h3>
+              </div>
+              <span class="tag">最小可见</span>
+            </div>
+            <div class="profile">
+              <div><strong>3</strong><span>荣誉记录</span></div>
+              <div><strong>2</strong><span>服务标签</span></div>
+              <div><strong>1</strong><span>待办事项</span></div>
+            </div>
+            <ul class="plain-list">
+              <li>校级三等奖学金 · 2025</li>
+              <li>优秀共青团员 · 2024</li>
+              <li>志愿服务 36 小时</li>
+            </ul>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">通知中心</p>
+              <h3>精准推送</h3>
+            </div>
+            <span class="tag">按年级 / 专业 / 标签</span>
+          </div>
+          <div class="notice-list" id="studentNotices"></div>
+        </section>
+      </section>
+
+      <section id="admin" class="view">
+        <div class="dashboard">
+          <div><strong>1186</strong><span>学生数据</span></div>
+          <div><strong>27</strong><span>知识库条目</span></div>
+          <div><strong>14</strong><span>待处理审批</span></div>
+          <div><strong>96%</strong><span>本周按时办结</span></div>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">审批处理</p>
+                <h3>待办列表</h3>
+              </div>
+              <span class="tag warning">需审核</span>
+            </div>
+            <table>
+              <thead><tr><th>申请人</th><th>事项</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="approvalRows"></tbody>
+            </table>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">通知发布</p>
+                <h3>定向消息</h3>
+              </div>
+              <span class="tag">P1</span>
+            </div>
+            <form id="noticeForm" class="form">
+              <label>目标范围<select name="target"><option>2023级软件工程</option><option>团支书</option><option>入党积极分子</option></select></label>
+              <label>通知内容<textarea name="content">请本周五前完成党团材料核对。</textarea></label>
+              <button type="submit">发布通知</button>
+            </form>
+          </section>
+        </div>
+
+        <div class="content-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">数据维护</p>
+                <h3>导入导出</h3>
+              </div>
+              <span class="tag">Excel / Word / PDF</span>
+            </div>
+            <div class="file-box">
+              <span>学生基础信息.xlsx</span>
+              <button id="importBtn">模拟导入</button>
+            </div>
+            <div class="notice" id="importResult">等待导入数据。</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">权限与日志</p>
+                <h3>操作审计</h3>
+              </div>
+              <span class="tag danger">P0</span>
+            </div>
+            <ul class="log-list" id="logList"></ul>
+          </section>
+        </div>
+      </section>
+
+      <section id="leader" class="view">
+        <div class="leader-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">学院领导</p>
+                <h3>服务概览</h3>
+              </div>
+              <span class="tag">统计结果</span>
+            </div>
+            <div class="chart-bars">
+              <div style="--h: 82%"><span></span><b>政策查询</b></div>
+              <div style="--h: 64%"><span></span><b>流程提醒</b></div>
+              <div style="--h: 48%"><span></span><b>审批办结</b></div>
+              <div style="--h: 72%"><span></span><b>通知触达</b></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">终审事项</p>
+                <h3>需要关注</h3>
+              </div>
+              <span class="tag warning">2 项</span>
+            </div>
+            <ul class="plain-list">
+              <li>2023级软件工程党课结业材料批量确认</li>
+              <li>困难学生临时补助证明终审</li>
+              <li>本月学生事务办理效率报告已生成</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

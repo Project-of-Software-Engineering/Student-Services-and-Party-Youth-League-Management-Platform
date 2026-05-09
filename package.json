@@ -1,0 +1,9 @@
+{
+  "name": "college-service-platform-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "学院学生综合服务与党团管理平台本地演示版",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
