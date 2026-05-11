@@ -1,0 +1,7 @@
+export class UserResponseDto {
+  id!: string;
+  username!: string;
+  displayName!: string;
+  status!: string;
+  roles!: string[];
+}

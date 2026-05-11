@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum StudentStatus {
+  ACTIVE
+  LEAVE
+  GRADUATED
+  DROPPED_OUT
+}
+
+enum ApprovalStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum ApprovalStepDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum NoticeChannel {
+  IN_APP
+  EMAIL
+  WECHAT
+}
+
+model User {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  displayName  String
+  status       UserStatus     @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  student      Student?
+  roles        UserRole[]
+  approvals    ApprovalStep[] @relation("ApprovalOperator")
+  logs         OperationLog[]
+}
+
+model Role {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  users     UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Student {
+  id             String          @id @default(cuid())
+  studentNo      String          @unique
+  name           String
+  grade          String
+  major          String
+  className      String
+  politicalState String?
+  status         StudentStatus   @default(ACTIVE)
+  userId         String?         @unique
+  user           User?           @relation(fields: [userId], references: [id])
+  profile        StudentProfile?
+  approvals      Approval[]
+  noticeTargets  NoticeTarget[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model StudentProfile {
+  id          String   @id @default(cuid())
+  studentId   String   @unique
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  honors      Json?
+  competitions Json?
+  practices   Json?
+  tags        String[]
+  bio         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PolicyDoc {
+  id             String   @id @default(cuid())
+  title          String
+  category       String
+  version        String
+  sourceFileKey  String
+  sourceFileName String
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Approval {
+  id          String         @id @default(cuid())
+  studentId   String
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type        String
+  reason      String
+  status      ApprovalStatus @default(DRAFT)
+  currentStep Int            @default(0)
+  submittedAt DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  steps       ApprovalStep[]
+}
+
+model ApprovalStep {
+  id         String               @id @default(cuid())
+  approvalId String
+  approval   Approval             @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  stepNo     Int
+  roleCode   String
+  operatorId String?
+  operator   User?                @relation("ApprovalOperator", fields: [operatorId], references: [id])
+  decision   ApprovalStepDecision @default(PENDING)
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime             @default(now())
+}
+
+model Notice {
+  id            String         @id @default(cuid())
+  title         String
+  content       String
+  channel       NoticeChannel  @default(IN_APP)
+  targetScope   Json?
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  targets       NoticeTarget[]
+}
+
+model NoticeTarget {
+  id        String   @id @default(cuid())
+  noticeId  String
+  studentId String
+  notice    Notice   @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([noticeId, studentId])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  ownerType  String
+  ownerId    String
+  fileKey    String
+  fileName   String
+  mimeType   String
+  fileSize   Int
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+}
+
+model OperationLog {
+  id         String   @id @default(cuid())
+  operatorId String?
+  operator   User?    @relation(fields: [operatorId], references: [id])
+  action     String
+  targetType String
+  targetId   String?
+  detail     Json?
+  createdAt  DateTime @default(now())
+}

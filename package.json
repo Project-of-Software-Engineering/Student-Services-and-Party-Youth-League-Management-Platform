@@ -1,9 +1,19 @@
 {
-  "name": "college-service-platform-demo",
-  "version": "0.1.0",
+  "name": "college-service-platform",
+  "version": "0.2.0",
   "private": true,
   "description": "学院学生综合服务与党团管理平台本地演示版",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
-    "start": "node server.js"
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend run start:dev",
+    "build:frontend": "npm --workspace frontend run build",
+    "build:backend": "npm --workspace backend run build",
+    "prisma:generate": "npm --workspace backend run prisma:generate",
+    "prisma:migrate": "npm --workspace backend run prisma:migrate",
+    "prisma:seed": "npm --workspace backend run prisma:seed"
   }
 }

@@ -1,44 +1,21 @@
-<<<<<<< HEAD
-# 学院学生综合服务与党团管理平台 Demo
+# 学院学生综合服务与党团管理平台
 
-这是根据《学院学生综合服务与党团管理平台-软件需求策划书》整理出的本地可运行初版演示系统。当前版本以课程展示和部署截图为目标，采用零依赖静态前端加 Node 本地服务。
+## 结构
 
-## 已覆盖的演示功能
+- `docs/`: plan documents
+- `frontend/`: Vue 3 frontend scaffold
+- `backend/`: NestJS backend scaffold
+- `infra/`: Docker Compose and env examples
+- root reference files: requirements and source documents
 
-- 学生端：政策知识库问答、党团流程进度、电子证明申请、通知中心、学生画像。
-- 管理端：审批处理、通知发布、数据导入模拟、角色权限与操作日志。
-- 领导端：服务统计看板、终审事项概览。
-- 响应式布局：桌面端和手机端都可以打开截图。
+## Dev Entry
 
-## 本地运行
+- Frontend: `npm run dev:frontend`
+- Backend: `npm run dev:backend`
+- Prisma generate: `npm run prisma:generate`
+- Prisma migrate: `npm run prisma:migrate`
+- Prisma seed: `npm run prisma:seed`
 
-确保已安装 Node.js，然后在项目目录执行：
+## Note
 
-```bash
-npm start
-```
-
-浏览器访问：
-
-```text
-http://localhost:3000
-```
-
-如服务器端口需要调整，可设置环境变量：
-
-```bash
-PORT=8080 npm start
-```
-
-Windows PowerShell 可使用：
-
-```powershell
-$env:PORT=8080; npm start
-```
-
-## 部署建议
-
-最简单的部署方式是把整个目录上传到服务器，安装 Node.js 后执行 `npm start`。也可以直接把 `index.html`、`styles.css`、`script.js` 放到 Nginx、Apache 或任意静态站点服务目录中。
-=======
-# Student-Services-and-Party-Youth-League-Management-Platform
->>>>>>> fcd7221bf289d3bb703e4e5799ccc9d52a1363fd
+The repository now uses the new frontend and backend scaffold as the main implementation path.
