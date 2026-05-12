@@ -2,7 +2,7 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl netcat-openbsd
 
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
@@ -32,4 +32,4 @@ WORKDIR /app/backend
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed.js && node dist/main.js"]
+CMD ["sh", "-c", "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done; npx prisma migrate deploy && node prisma/seed.js && node dist/main.js"]
