@@ -43,32 +43,90 @@ async function handleLogin() {
 
 <template>
   <AppShell title="登录" subtitle="进入学生综合服务与党团管理平台。" :links="links">
-    <form class="form-card" @submit.prevent="handleLogin">
-      <label>
-        <span>账号</span>
-        <input v-model="username" type="text" placeholder="demo.admin" />
-      </label>
-      <label>
-        <span>密码</span>
-        <input v-model="password" type="password" placeholder="请输入密码" />
-      </label>
-      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-      <button type="submit" :disabled="loading">
-        {{ loading ? "登录中..." : "立即登录" }}
-      </button>
-    </form>
+    <section class="login-layout">
+      <div class="login-visual">
+        <span>RENMIN UNIVERSITY OF CHINA</span>
+        <strong>以学生成长为中心，连接服务、管理与党团事务。</strong>
+      </div>
+
+      <form class="form-card" @submit.prevent="handleLogin">
+        <div class="form-heading">
+          <span>UNIFIED LOGIN</span>
+          <strong>统一身份登录</strong>
+        </div>
+        <label>
+          <span>账号</span>
+          <input v-model="username" type="text" placeholder="demo.admin" />
+        </label>
+        <label>
+          <span>密码</span>
+          <input v-model="password" type="password" placeholder="请输入密码" />
+        </label>
+        <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+        <button type="submit" :disabled="loading">
+          {{ loading ? "登录中..." : "立即登录" }}
+        </button>
+      </form>
+    </section>
   </AppShell>
 </template>
 
 <style scoped>
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(320px, 0.8fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.login-visual {
+  min-height: 520px;
+  padding: 36px;
+  display: grid;
+  align-content: end;
+  color: #fff7ec;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.68) 100%),
+    linear-gradient(90deg, rgba(100, 0, 0, 0.65), transparent 58%),
+    url("/ruc-images/old-campus.jpg") center / cover;
+  box-shadow: var(--ruc-shadow);
+}
+
+.login-visual span,
+.form-heading span {
+  color: var(--ruc-gold);
+  font-family: "Times New Roman", serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.login-visual strong {
+  max-width: 560px;
+  margin-top: 14px;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.25;
+}
+
 .form-card {
-  max-width: 420px;
   display: grid;
   gap: 16px;
-  padding: 24px;
-  border-radius: 20px;
-  background: #ffffff;
-  box-shadow: 0 18px 40px rgba(18, 35, 61, 0.08);
+  align-content: center;
+  padding: 34px;
+  background: var(--ruc-card);
+  border: 1px solid var(--ruc-line);
+  border-top: 5px solid var(--ruc-red);
+  box-shadow: var(--ruc-shadow);
+}
+
+.form-heading {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.form-heading strong {
+  font-size: 30px;
 }
 
 label {
@@ -78,17 +136,18 @@ label {
 
 input {
   padding: 12px 14px;
-  border: 1px solid #d8e0eb;
-  border-radius: 12px;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
 }
 
 button {
+  min-height: 46px;
   padding: 12px 16px;
   border: 0;
-  border-radius: 12px;
-  background: #2559b8;
+  background: var(--ruc-red);
   color: #ffffff;
   cursor: pointer;
+  font-weight: 700;
 }
 
 button:disabled {
@@ -98,6 +157,16 @@ button:disabled {
 
 .error {
   margin: 0;
-  color: #b42318;
+  color: var(--ruc-red);
+}
+
+@media (max-width: 960px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .login-visual {
+    min-height: 340px;
+  }
 }
 </style>
