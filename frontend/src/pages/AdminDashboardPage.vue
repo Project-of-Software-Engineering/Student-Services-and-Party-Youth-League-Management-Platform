@@ -410,15 +410,16 @@ function normalizeError(error: unknown, fallback: string) {
 .module-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 
 .dual-panel,
 .module-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 
 .summary-card,
@@ -426,28 +427,46 @@ function normalizeError(error: unknown, fallback: string) {
   display: grid;
   gap: 8px;
   padding: 20px;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 18px 40px rgba(18, 35, 61, 0.08);
+  background: var(--ruc-card);
+  border: 1px solid var(--ruc-line);
+  box-shadow: var(--ruc-shadow);
 }
 
 .module-card span {
-  color: #5f6f86;
+  color: var(--ruc-muted);
+  line-height: 1.65;
+}
+
+.module-card strong,
+.summary-card strong {
+  color: var(--ruc-ink);
 }
 
 .summary-card {
-  background: #f7faff;
-  border: 1px solid #dfe7f3;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(157, 0, 0, 0.08), transparent 62%),
+    #fffaf2;
+  border-top: 4px solid var(--ruc-red);
+}
+
+.summary-card span {
+  color: var(--ruc-red);
+  font-size: 30px;
+  font-weight: 800;
+  font-family: Georgia, serif;
 }
 
 .import-panel {
   display: grid;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 26px;
   padding: 24px;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 18px 40px rgba(18, 35, 61, 0.08);
+  background: #fffaf2;
+  border: 1px solid var(--ruc-line);
+  border-top: 4px solid var(--ruc-red);
+  box-shadow: var(--ruc-shadow);
 }
 
 .panel-heading {
@@ -460,7 +479,11 @@ function normalizeError(error: unknown, fallback: string) {
 .panel-heading span,
 .field span,
 .status-line {
-  color: #5f6f86;
+  color: var(--ruc-muted);
+}
+
+.panel-heading strong {
+  font-size: 22px;
 }
 
 .field {
@@ -472,10 +495,9 @@ function normalizeError(error: unknown, fallback: string) {
 .field textarea {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #d8e1ef;
-  border-radius: 12px;
-  background: #f8fbff;
-  color: #172033;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
+  color: var(--ruc-ink);
   font: inherit;
 }
 
@@ -486,17 +508,17 @@ function normalizeError(error: unknown, fallback: string) {
 
 .compact-card {
   padding: 16px;
-  border: 1px solid #eef2f7;
+  border: 1px solid var(--ruc-line);
   box-shadow: none;
 }
 
 .primary-button {
   border: none;
-  border-radius: 999px;
   padding: 12px 18px;
-  background: #12233d;
+  background: var(--ruc-red);
   color: #ffffff;
   font: inherit;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -510,11 +532,11 @@ function normalizeError(error: unknown, fallback: string) {
 }
 
 .status-line.success {
-  color: #17603f;
+  color: #1d6841;
 }
 
 .status-line.error {
-  color: #9f2f2f;
+  color: var(--ruc-red);
 }
 
 @media (max-width: 900px) {

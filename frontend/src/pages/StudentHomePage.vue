@@ -183,15 +183,15 @@ const reminderLevelLabels: Record<string, string> = {
 .module-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .timeline-grid,
 .summary-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 
 .timeline-card,
@@ -199,51 +199,61 @@ const reminderLevelLabels: Record<string, string> = {
   display: grid;
   gap: 8px;
   padding: 20px;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 18px 40px rgba(18, 35, 61, 0.08);
+  background: var(--ruc-card);
+  border: 1px solid var(--ruc-line);
+  box-shadow: var(--ruc-shadow);
 }
 
 .module-card span {
-  color: #5f6f86;
+  color: var(--ruc-muted);
+  line-height: 1.65;
 }
 
 .module-card small,
 .timeline-card small {
-  color: #8a99ad;
+  color: var(--ruc-red);
   text-transform: uppercase;
+  font-weight: 700;
 }
 
 .policy-panel input {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #d8e1ef;
-  border-radius: 12px;
-  background: #f8fbff;
-  color: #172033;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
+  color: var(--ruc-ink);
   font: inherit;
 }
 
 .timeline-card[data-status="completed"] {
-  border: 1px solid #d7eadc;
-  background: #f5fbf6;
+  border-color: rgba(29, 104, 65, 0.28);
+  background: linear-gradient(135deg, rgba(29, 104, 65, 0.08), #fffaf2 60%);
 }
 
 .timeline-card[data-status="current"] {
-  border: 1px solid #cfe0fb;
-  background: #f5f9ff;
+  border-color: rgba(157, 0, 0, 0.35);
+  background: linear-gradient(135deg, rgba(157, 0, 0, 0.12), #fffaf2 62%);
+  border-top: 4px solid var(--ruc-red);
 }
 
 .timeline-card[data-status="pending"] {
-  border: 1px solid #eceff4;
+  border-color: var(--ruc-line);
 }
 
 .summary-card {
   display: grid;
   gap: 6px;
   padding: 16px 20px;
-  border-radius: 18px;
-  background: #f7faff;
-  border: 1px solid #e4ebf4;
+  background: #fffaf2;
+  border: 1px solid var(--ruc-line);
+  border-top: 4px solid var(--ruc-red);
+  box-shadow: var(--ruc-shadow);
+}
+
+.summary-card span {
+  color: var(--ruc-red);
+  font-size: 26px;
+  font-weight: 800;
+  font-family: Georgia, serif;
 }
 </style>

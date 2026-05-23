@@ -3,6 +3,7 @@ dist/
 coverage/
 .env
 .env.*
+!infra/.env.example
 *.log
 .DS_Store
 frontend/node_modules/
