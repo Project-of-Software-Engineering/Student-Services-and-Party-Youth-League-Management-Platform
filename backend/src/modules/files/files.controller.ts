@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -16,7 +17,33 @@ import { Response } from "express";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
-import { FilesService, UploadedFilePayload } from "./files.service";
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  FilesService,
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  UploadedFilePayload
+} from "./files.service";
+
+const fileUploadOptions = {
+  limits: {
+    fileSize: MAX_UPLOAD_FILE_SIZE_BYTES,
+    files: 1,
+    fields: 2,
+    fieldSize: 256
+  },
+  fileFilter: (
+    _request: unknown,
+    file: UploadedFilePayload,
+    callback: (error: Error | null, acceptFile: boolean) => void
+  ) => {
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype)) {
+      callback(new BadRequestException("仅支持 PDF、Word、Excel、图片和纯文本附件。"), false);
+      return;
+    }
+
+    callback(null, true);
+  }
+};
 
 @UseGuards(JwtAuthGuard)
 @Controller("files")
@@ -33,7 +60,7 @@ export class FilesController {
   }
 
   @Post("upload")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", fileUploadOptions))
   upload(
     @UploadedFile() file: UploadedFilePayload,
     @Body("ownerType") ownerType: string | undefined,

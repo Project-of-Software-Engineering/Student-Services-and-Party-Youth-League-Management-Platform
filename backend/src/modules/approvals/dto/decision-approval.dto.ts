@@ -1,7 +1,10 @@
-import { IsOptional, IsString } from "class-validator";
+import { Transform } from "class-transformer";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 
 export class DecisionApprovalDto {
   @IsOptional()
   @IsString()
+  @MaxLength(500)
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   comment?: string;
 }

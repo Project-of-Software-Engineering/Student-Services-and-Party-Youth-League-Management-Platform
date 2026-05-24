@@ -7,7 +7,7 @@ import {
 import { Attachment, StudentStatus } from "@prisma/client";
 import { createReadStream } from "fs";
 import { mkdir, stat, writeFile } from "fs/promises";
-import { dirname, join, normalize } from "path";
+import { dirname, isAbsolute, join, normalize, relative } from "path";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
@@ -20,6 +20,20 @@ export interface UploadedFilePayload {
   size: number;
   buffer: Buffer;
 }
+
+export const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/plain"
+]);
 
 @Injectable()
 export class FilesService {
@@ -53,6 +67,12 @@ export class FilesService {
   ): Promise<FileResponseDto> {
     if (!file?.buffer?.length) {
       throw new BadRequestException("请上传有效附件。");
+    }
+    if (file.size > MAX_UPLOAD_FILE_SIZE_BYTES || file.buffer.length > MAX_UPLOAD_FILE_SIZE_BYTES) {
+      throw new BadRequestException("附件大小不能超过 10MB。");
+    }
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("仅支持 PDF、Word、Excel、图片和纯文本附件。");
     }
 
     const ownerType = input.ownerType?.trim() || "general";
@@ -254,7 +274,8 @@ export class FilesService {
   private resolveFilePath(fileKey: string): string {
     const fullPath = normalize(join(this.storageDir, fileKey));
     const normalizedStorageDir = normalize(this.storageDir);
-    if (!fullPath.startsWith(normalizedStorageDir)) {
+    const relativePath = relative(normalizedStorageDir, fullPath);
+    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
       throw new BadRequestException("附件路径非法。");
     }
     return fullPath;

@@ -179,7 +179,7 @@ export class ApprovalsService {
       statusGroups,
       typeGroups,
       pendingFinalCount,
-      activeStudentCount,
+      visibleStudentCount,
       attachmentCount,
       recentApprovals
     ] = await Promise.all([
@@ -206,11 +206,7 @@ export class ApprovalsService {
           currentStep: APPROVAL_WORKFLOW.length - 1
         }
       }),
-      this.prisma.student.count({
-        where: {
-          status: "ACTIVE"
-        }
-      }),
+      this.countVisibleActiveStudents(currentUser),
       this.prisma.attachment.count({
         where: {
           ownerType: "approval",
@@ -237,7 +233,7 @@ export class ApprovalsService {
         total: Object.values(counts).reduce((sum, value) => sum + value, 0),
         pendingFinal: pendingFinalCount,
         attachments: attachmentCount,
-        activeStudents: activeStudentCount
+        activeStudents: visibleStudentCount
       },
       typeDistribution: typeGroups.map((item) => ({
         type: item.type,
@@ -294,21 +290,39 @@ export class ApprovalsService {
     const isLastStep = approval.currentStep >= APPROVAL_WORKFLOW.length - 1;
     const approvalUpdate = this.buildDecisionApprovalUpdate(approval, decision, isLastStep);
 
-    await this.prisma.$transaction([
-      this.prisma.approvalStep.update({
-        where: { id: currentStep.id },
+    await this.prisma.$transaction(async (tx) => {
+      const stepUpdate = await tx.approvalStep.updateMany({
+        where: {
+          id: currentStep.id,
+          decision: ApprovalStepDecision.PENDING
+        },
         data: {
           decision,
           operatorId: currentUser.id,
           comment: dto.comment ?? null,
           decidedAt
         }
-      }),
-      this.prisma.approval.update({
-        where: { id },
+      });
+
+      if (stepUpdate.count !== 1) {
+        throw new BadRequestException("当前审批节点已被处理，请刷新后重试。");
+      }
+
+      const approvalUpdateResult = await tx.approval.updateMany({
+        where: {
+          id,
+          currentStep: approval.currentStep,
+          status: {
+            in: [ApprovalStatus.SUBMITTED, ApprovalStatus.IN_REVIEW]
+          }
+        },
         data: approvalUpdate
-      })
-    ]);
+      });
+
+      if (approvalUpdateResult.count !== 1) {
+        throw new BadRequestException("审批单状态已变化，请刷新后重试。");
+      }
+    });
 
     await this.logsService.createOperationLog({
       action: `approvals.${decision.toLowerCase()}`,
@@ -330,7 +344,7 @@ export class ApprovalsService {
     approval: ApprovalWithRelations,
     decision: ApprovalStepDecision,
     isLastStep: boolean
-  ): Prisma.ApprovalUpdateInput {
+  ): Prisma.ApprovalUpdateManyMutationInput {
     if (decision === ApprovalStepDecision.REJECTED) {
       return {
         status: ApprovalStatus.REJECTED,
@@ -526,13 +540,14 @@ export class ApprovalsService {
       return;
     }
 
-    await this.prisma.attachment.updateMany({
+    const uniqueAttachmentIds = [...new Set(attachmentIds)];
+    const result = await this.prisma.attachment.updateMany({
       where: {
         id: {
-          in: attachmentIds
+          in: uniqueAttachmentIds
         },
+        uploadedBy: currentUser.id,
         OR: [
-          { uploadedBy: currentUser.id },
           { ownerType: "general" },
           { ownerType: "approval", ownerId: approvalId }
         ]
@@ -542,6 +557,10 @@ export class ApprovalsService {
         ownerId: approvalId
       }
     });
+
+    if (result.count !== uniqueAttachmentIds.length) {
+      throw new BadRequestException("存在无权关联或已绑定到其他业务的附件。");
+    }
   }
 
   private buildApprovalWhere(
@@ -579,6 +598,23 @@ export class ApprovalsService {
     });
 
     return approvals.map((approval) => approval.id);
+  }
+
+  private countVisibleActiveStudents(currentUser: AuthUser): Promise<number> {
+    if (this.isPrivilegedUser(currentUser)) {
+      return this.prisma.student.count({
+        where: {
+          status: "ACTIVE"
+        }
+      });
+    }
+
+    return this.prisma.student.count({
+      where: {
+        userId: currentUser.id,
+        status: "ACTIVE"
+      }
+    });
   }
 
   private assertCanViewApproval(approval: ApprovalWithRelations, currentUser: AuthUser) {
