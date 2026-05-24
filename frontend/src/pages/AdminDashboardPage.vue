@@ -183,7 +183,13 @@ const channelLabels: Record<string, string> = {
 const logActionLabels: Record<string, string> = {
   "students.import": "学生导入",
   "policies.create": "新增政策",
-  "notices.publish": "发布通知"
+  "notices.publish": "发布通知",
+  "approvals.create": "创建审批",
+  "approvals.submit": "提交审批",
+  "approvals.approved": "审批通过",
+  "approvals.rejected": "审批驳回",
+  "approvals.returned": "退回审批",
+  "files.upload": "上传附件"
 };
 
 function getRoleLabel(role: string) {
@@ -223,6 +229,18 @@ function formatLogDetail(detail: Record<string, unknown> | null | undefined) {
   }
   if (typeof detail.sourceFileName === "string") {
     parts.push(`来源文件：${detail.sourceFileName}`);
+  }
+  if (typeof detail.type === "string") {
+    parts.push(`类型：${detail.type}`);
+  }
+  if (typeof detail.status === "string") {
+    parts.push(`状态：${detail.status}`);
+  }
+  if (typeof detail.stepNo === "number") {
+    parts.push(`节点：${detail.stepNo}`);
+  }
+  if (typeof detail.fileName === "string") {
+    parts.push(`附件：${detail.fileName}`);
   }
 
   return parts.length > 0 ? parts.join("，") : "无附加详情";

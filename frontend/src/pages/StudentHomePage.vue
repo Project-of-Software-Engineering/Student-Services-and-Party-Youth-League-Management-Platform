@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "@/components/AppShell.vue";
 import { http } from "@/services/http";
 import { useSessionStore } from "@/stores/session";
@@ -14,11 +14,11 @@ const links = [
 
 const session = useSessionStore();
 session.hydrate();
+const queryClient = useQueryClient();
 
 const modules = [
   "政策知识库",
   "党团流程跟踪",
-  "线上申请与审批",
   "通知与提醒",
   "学生画像与荣誉"
 ];
@@ -94,6 +94,73 @@ const reminderLevelLabels: Record<string, string> = {
   warning: "待处理",
   success: "已完成"
 };
+
+const approvalStatusLabels: Record<string, string> = {
+  DRAFT: "草稿",
+  SUBMITTED: "已提交",
+  IN_REVIEW: "审核中",
+  APPROVED: "已通过",
+  REJECTED: "已驳回",
+  RETURNED: "退回补充"
+};
+
+const approvalRoleLabels: Record<string, string> = {
+  teacher: "辅导员初审",
+  admin: "学院复核",
+  leader: "领导终审"
+};
+
+const approvalForm = ref({
+  type: "党团发展材料审批",
+  reason: "本人已完成本阶段培养、实践和材料整理，申请进入线上审批流程。"
+});
+
+const approvalsQuery = useQuery({
+  queryKey: ["approvals", "mine"],
+  queryFn: async () => (await http.get("/approvals", { params: { mine: true, limit: 6 } })).data,
+  enabled: session.isAuthed
+});
+
+const approvalMutation = useMutation({
+  mutationFn: async () => {
+    const created = (
+      await http.post("/approvals", {
+        type: approvalForm.value.type,
+        reason: approvalForm.value.reason
+      })
+    ).data;
+
+    return (
+      await http.post(`/approvals/${created.id}/submit`, {
+        comment: "学生端创建并提交审批。"
+      })
+    ).data;
+  },
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["approvals", "mine"] }),
+      queryClient.invalidateQueries({ queryKey: ["approvals", "summary"] })
+    ]);
+  }
+});
+
+const approvalErrorMessage = computed(() =>
+  normalizeError(approvalMutation.error.value, "审批提交失败。")
+);
+
+function currentApprovalStep(approval: { currentStep: number; steps: Array<{ stepNo: number; roleCode: string }> }) {
+  return approval.steps.find((step) => step.stepNo === approval.currentStep + 1)?.roleCode ?? "";
+}
+
+function normalizeError(error: unknown, fallback: string) {
+  if (!error) {
+    return "";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
+}
 </script>
 
 <template>
@@ -162,6 +229,47 @@ const reminderLevelLabels: Record<string, string> = {
       </article>
     </section>
 
+    <section class="approval-panel">
+      <div class="panel-heading">
+        <div>
+          <strong>线上申请与审批</strong>
+          <span>提交后进入辅导员、学院、领导三级审批流程。</span>
+        </div>
+        <button type="button" class="primary-button" :disabled="approvalMutation.isPending.value" @click="approvalMutation.mutate()">
+          {{ approvalMutation.isPending.value ? "提交中..." : "创建并提交" }}
+        </button>
+      </div>
+
+      <div class="approval-form">
+        <label class="field">
+          <span>申请类型</span>
+          <input v-model="approvalForm.type" type="text" />
+        </label>
+        <label class="field">
+          <span>申请理由</span>
+          <textarea v-model="approvalForm.reason" rows="5" />
+        </label>
+      </div>
+
+      <p v-if="approvalMutation.data.value" class="status-line success">
+        《{{ approvalMutation.data.value.type }}》已提交，当前状态：{{ approvalStatusLabels[approvalMutation.data.value.status] ?? approvalMutation.data.value.status }}。
+      </p>
+      <p v-if="approvalErrorMessage" class="status-line error">{{ approvalErrorMessage }}</p>
+
+      <div class="approval-list">
+        <article v-for="approval in approvalsQuery.data.value ?? []" :key="approval.id" class="approval-card">
+          <strong>{{ approval.type }}</strong>
+          <span>{{ approval.reason }}</span>
+          <small>
+            {{ approvalStatusLabels[approval.status] ?? approval.status }}
+            <template v-if="currentApprovalStep(approval)">
+              | 当前：{{ approvalRoleLabels[currentApprovalStep(approval)] ?? currentApprovalStep(approval) }}
+            </template>
+          </small>
+        </article>
+      </div>
+    </section>
+
     <div class="module-grid">
       <article v-for="item in modules" :key="item" class="module-card">
         <strong>{{ item }}</strong>
@@ -225,6 +333,105 @@ const reminderLevelLabels: Record<string, string> = {
   font: inherit;
 }
 
+.approval-panel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 26px;
+  padding: 24px;
+  background: #fffaf2;
+  border: 1px solid var(--ruc-line);
+  border-top: 4px solid var(--ruc-red);
+  box-shadow: var(--ruc-shadow);
+}
+
+.panel-heading {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.panel-heading strong {
+  font-size: 22px;
+}
+
+.panel-heading span,
+.field span,
+.status-line {
+  color: var(--ruc-muted);
+}
+
+.approval-form,
+.approval-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
+  color: var(--ruc-ink);
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.approval-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
+}
+
+.approval-card span {
+  color: var(--ruc-muted);
+  line-height: 1.65;
+}
+
+.approval-card small {
+  color: var(--ruc-red);
+  font-weight: 700;
+}
+
+.primary-button {
+  border: none;
+  padding: 12px 18px;
+  background: var(--ruc-red);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.status-line {
+  margin: 0;
+}
+
+.status-line.success {
+  color: #1d6841;
+}
+
+.status-line.error {
+  color: var(--ruc-red);
+}
+
 .timeline-card[data-status="completed"] {
   border-color: rgba(29, 104, 65, 0.28);
   background: linear-gradient(135deg, rgba(29, 104, 65, 0.08), #fffaf2 60%);
@@ -255,5 +462,11 @@ const reminderLevelLabels: Record<string, string> = {
   font-size: 26px;
   font-weight: 800;
   font-family: Georgia, serif;
+}
+
+@media (max-width: 900px) {
+  .panel-heading {
+    flex-direction: column;
+  }
 }
 </style>

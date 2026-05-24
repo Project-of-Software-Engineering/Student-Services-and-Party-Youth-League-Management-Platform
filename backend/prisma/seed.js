@@ -1,4 +1,7 @@
-require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
+const path = require("path");
+const fs = require("fs/promises");
+
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
@@ -33,6 +36,22 @@ async function main() {
           "League Activity Attendance Rules",
           "Volunteer Service Credit Rules"
         ]
+      }
+    }
+  });
+
+  await prisma.attachment.deleteMany({
+    where: {
+      fileKey: {
+        startsWith: "seed/approvals/"
+      }
+    }
+  });
+
+  await prisma.approval.deleteMany({
+    where: {
+      type: {
+        in: ["党团发展材料终审", "志愿服务时长认定", "奖助学金材料补充"]
       }
     }
   });
@@ -85,6 +104,21 @@ async function main() {
     }
   });
 
+  const leader = await prisma.user.upsert({
+    where: { username: "demo.leader" },
+    update: {
+      displayName: "演示领导",
+      passwordHash: adminPasswordHash,
+      status: "ACTIVE"
+    },
+    create: {
+      username: "demo.leader",
+      displayName: "演示领导",
+      passwordHash: adminPasswordHash,
+      status: "ACTIVE"
+    }
+  });
+
   const studentUser = await prisma.user.upsert({
     where: { username: "demo.student" },
     update: {
@@ -106,6 +140,7 @@ async function main() {
   const userRolePairs = [
     [admin.id, roleMap.get("admin")],
     [teacher.id, roleMap.get("teacher")],
+    [leader.id, roleMap.get("leader")],
     [studentUser.id, roleMap.get("student")]
   ];
 
@@ -332,6 +367,134 @@ async function main() {
         studentId: secondStudent.id
       }
     ]
+  });
+
+  const approvalSeedDir = path.join(__dirname, "..", "storage", "uploads", "seed", "approvals");
+  await fs.mkdir(approvalSeedDir, { recursive: true });
+
+  const finalReviewFileName = "final-review-material.txt";
+  const finalReviewContent = "党团发展材料终审演示附件：含思想汇报、培训签到、支部意见摘要。";
+  await fs.writeFile(path.join(approvalSeedDir, finalReviewFileName), finalReviewContent);
+
+  const finalApproval = await prisma.approval.create({
+    data: {
+      studentId: firstStudent.id,
+      type: "党团发展材料终审",
+      reason: "演示审批：学生已完成团校培养和积极分子考察，申请进入最终审批。",
+      status: "IN_REVIEW",
+      currentStep: 2,
+      submittedAt: new Date("2026-05-12T02:00:00.000Z"),
+      steps: {
+        create: [
+          {
+            stepNo: 1,
+            roleCode: "teacher",
+            decision: "APPROVED",
+            operatorId: teacher.id,
+            comment: "材料齐全，建议进入复核。",
+            decidedAt: new Date("2026-05-12T08:00:00.000Z")
+          },
+          {
+            stepNo: 2,
+            roleCode: "admin",
+            decision: "APPROVED",
+            operatorId: admin.id,
+            comment: "画像、服务时长与流程节点一致。",
+            decidedAt: new Date("2026-05-13T06:20:00.000Z")
+          },
+          {
+            stepNo: 3,
+            roleCode: "leader",
+            decision: "PENDING"
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.attachment.create({
+    data: {
+      ownerType: "approval",
+      ownerId: finalApproval.id,
+      fileKey: `seed/approvals/${finalReviewFileName}`,
+      fileName: "党团发展材料终审摘要.txt",
+      mimeType: "text/plain",
+      fileSize: Buffer.byteLength(finalReviewContent),
+      uploadedBy: studentUser.id
+    }
+  });
+
+  await prisma.approval.create({
+    data: {
+      studentId: secondStudent.id,
+      type: "志愿服务时长认定",
+      reason: "演示审批：申请认定本学期社区服务与朋辈导师服务时长。",
+      status: "RETURNED",
+      currentStep: 0,
+      submittedAt: new Date("2026-05-10T03:00:00.000Z"),
+      steps: {
+        create: [
+          {
+            stepNo: 1,
+            roleCode: "teacher",
+            decision: "RETURNED",
+            operatorId: teacher.id,
+            comment: "请补充服务单位证明和签到记录。",
+            decidedAt: new Date("2026-05-10T09:00:00.000Z")
+          },
+          {
+            stepNo: 2,
+            roleCode: "admin",
+            decision: "PENDING"
+          },
+          {
+            stepNo: 3,
+            roleCode: "leader",
+            decision: "PENDING"
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.approval.create({
+    data: {
+      studentId: firstStudent.id,
+      type: "奖助学金材料补充",
+      reason: "演示审批：补充竞赛获奖证明，用于奖助学金材料归档。",
+      status: "APPROVED",
+      currentStep: 2,
+      submittedAt: new Date("2026-05-02T03:00:00.000Z"),
+      finishedAt: new Date("2026-05-05T09:30:00.000Z"),
+      steps: {
+        create: [
+          {
+            stepNo: 1,
+            roleCode: "teacher",
+            decision: "APPROVED",
+            operatorId: teacher.id,
+            comment: "证明材料清晰。",
+            decidedAt: new Date("2026-05-02T10:00:00.000Z")
+          },
+          {
+            stepNo: 2,
+            roleCode: "admin",
+            decision: "APPROVED",
+            operatorId: admin.id,
+            comment: "已完成复核。",
+            decidedAt: new Date("2026-05-04T08:00:00.000Z")
+          },
+          {
+            stepNo: 3,
+            roleCode: "leader",
+            decision: "APPROVED",
+            operatorId: leader.id,
+            comment: "同意归档。",
+            decidedAt: new Date("2026-05-05T09:30:00.000Z")
+          }
+        ]
+      }
+    }
   });
 }
 
