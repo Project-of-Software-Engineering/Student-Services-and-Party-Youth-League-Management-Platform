@@ -12,6 +12,7 @@
 - [部署与运维计划](./05-deployment-ops-plan.md)
 - [执行计划](./06-execution-plan.md)
 - [部署验证指南](./07-deployment-verification.md)
+- [协作开发与服务器更新说明](./10-collaboration-workflow.md)
 
 ## 使用方式
 
