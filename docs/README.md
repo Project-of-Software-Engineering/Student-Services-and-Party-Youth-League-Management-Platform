@@ -12,6 +12,8 @@
 - [部署与运维计划](./05-deployment-ops-plan.md)
 - [执行计划](./06-execution-plan.md)
 - [部署验证指南](./07-deployment-verification.md)
+- [四人并行开发分工方案](./08-four-person-parallel-plan.md)
+- [服务器部署与更新操作指南](./09-server-ops-guide.md)
 
 ## 使用方式
 
