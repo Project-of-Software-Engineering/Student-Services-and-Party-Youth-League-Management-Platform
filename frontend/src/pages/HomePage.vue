@@ -6,7 +6,7 @@
         <RouterLink to="/login">统一登录</RouterLink>
         <RouterLink to="/student">学生服务</RouterLink>
         <RouterLink to="/admin">党团管理</RouterLink>
-        <RouterLink to="/leader">领导驾驶舱</RouterLink>
+        <RouterLink to="/leader">领导审批</RouterLink>
       </nav>
       <div class="history-mark">
         <span>1937</span>
@@ -30,7 +30,6 @@
         </p>
         <div class="hero-actions">
           <RouterLink to="/login" class="primary-link">进入系统</RouterLink>
-          <RouterLink to="/student" class="ghost-link">学生端预览</RouterLink>
         </div>
       </div>
       <div class="explore-tab">探索平台 EXPLORE</div>
@@ -53,9 +52,9 @@
         <span>数据导入、通知发布、政策维护、操作日志。</span>
       </RouterLink>
       <RouterLink to="/leader" class="landing-card">
-        <small>04 / OVERVIEW</small>
-        <strong>领导驾驶舱</strong>
-        <span>运行概览、终审事项、报表摘要。</span>
+        <small>04 / APPROVAL</small>
+        <strong>领导审批</strong>
+        <span>终审事项、审批流转、附件归档与报表摘要。</span>
       </RouterLink>
     </section>
   </main>
@@ -181,8 +180,7 @@
   margin-top: 34px;
 }
 
-.primary-link,
-.ghost-link {
+.primary-link {
   min-height: 46px;
   display: inline-flex;
   align-items: center;
@@ -195,11 +193,6 @@
   background: var(--ruc-red);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.ghost-link {
-  color: #fff7ec;
-  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 
 .explore-tab {
