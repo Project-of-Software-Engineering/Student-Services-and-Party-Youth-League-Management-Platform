@@ -2,8 +2,9 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { useSessionStore } from "@/stores/session";
+import type { RoleName } from "@/types/common";
 
-defineProps<{
+const props = defineProps<{
   title: string;
   subtitle: string;
   links: Array<{ to: string; label: string }>;
@@ -14,10 +15,26 @@ const session = useSessionStore();
 session.hydrate();
 
 const currentUser = computed(() => session.user);
+const visibleLinks = computed(() => props.links.filter((link) => canSeeLink(link.to)));
 
 async function handleLogout() {
   session.clear();
   await router.push("/login");
+}
+
+function canSeeLink(to: string) {
+  const roles = currentUser.value?.roles ?? [];
+  if (to === "/admin") {
+    return hasAnyRole(roles, ["teacher", "admin"]);
+  }
+  if (to === "/leader") {
+    return hasAnyRole(roles, ["leader", "admin"]);
+  }
+  return true;
+}
+
+function hasAnyRole(userRoles: RoleName[], allowedRoles: RoleName[]) {
+  return userRoles.some((role) => allowedRoles.includes(role));
 }
 </script>
 
@@ -30,7 +47,7 @@ async function handleLogout() {
         <span>RUC STUDENT SERVICES</span>
       </div>
       <nav class="shell-links">
-        <RouterLink v-for="link in links" :key="link.to" :to="link.to">
+        <RouterLink v-for="link in visibleLinks" :key="link.to" :to="link.to">
           {{ link.label }}
         </RouterLink>
       </nav>

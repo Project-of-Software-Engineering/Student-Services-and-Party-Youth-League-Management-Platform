@@ -1,5 +1,29 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useSessionStore } from "@/stores/session";
+import type { RoleName } from "@/types/common";
+
+const defaultRouteByRole: Record<RoleName, string> = {
+  student: "/student",
+  teacher: "/admin",
+  admin: "/admin",
+  leader: "/leader"
+};
+
+function getDefaultRoute(roles: RoleName[] = []) {
+  if (roles.includes("student")) {
+    return defaultRouteByRole.student;
+  }
+  if (roles.includes("leader")) {
+    return defaultRouteByRole.leader;
+  }
+  if (roles.includes("teacher")) {
+    return defaultRouteByRole.teacher;
+  }
+  if (roles.includes("admin")) {
+    return defaultRouteByRole.admin;
+  }
+  return "/";
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,17 +41,26 @@ const router = createRouter({
     {
       path: "/student",
       name: "student",
-      component: () => import("@/pages/StudentHomePage.vue")
+      component: () => import("@/pages/StudentHomePage.vue"),
+      meta: {
+        roles: ["student", "teacher", "admin", "leader"]
+      }
     },
     {
       path: "/admin",
       name: "admin",
-      component: () => import("@/pages/AdminDashboardPage.vue")
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
     },
     {
       path: "/leader",
       name: "leader",
-      component: () => import("@/pages/LeaderDashboardPage.vue")
+      component: () => import("@/pages/LeaderDashboardPage.vue"),
+      meta: {
+        roles: ["leader", "admin"]
+      }
     }
   ]
 });
@@ -39,7 +72,12 @@ router.beforeEach((to) => {
     return "/login";
   }
   if (to.path === "/login" && session.isAuthed) {
-    return "/student";
+    return getDefaultRoute(session.user?.roles);
+  }
+
+  const allowedRoles = to.meta.roles as RoleName[] | undefined;
+  if (allowedRoles?.length && !session.user?.roles.some((role) => allowedRoles.includes(role))) {
+    return getDefaultRoute(session.user?.roles);
   }
 });
 
