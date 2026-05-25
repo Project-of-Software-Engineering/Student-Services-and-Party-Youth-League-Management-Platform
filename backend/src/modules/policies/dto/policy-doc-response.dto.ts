@@ -5,6 +5,7 @@ export class PolicyDocResponseDto {
   version!: string;
   sourceFileKey!: string;
   sourceFileName!: string;
+  status!: string;
   createdById!: string | null;
   createdAt!: string;
   updatedAt!: string;

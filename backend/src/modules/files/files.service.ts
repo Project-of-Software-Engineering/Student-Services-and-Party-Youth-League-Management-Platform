@@ -32,7 +32,8 @@ export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
-  "text/plain"
+  "text/plain",
+  "text/markdown"
 ]);
 
 @Injectable()

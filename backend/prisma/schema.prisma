@@ -41,6 +41,11 @@ enum NoticeChannel {
   WECHAT
 }
 
+enum PolicyStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
   id           String         @id @default(cuid())
   username     String         @unique
@@ -111,6 +116,7 @@ model PolicyDoc {
   version        String
   sourceFileKey  String
   sourceFileName String
+  status         PolicyStatus @default(ACTIVE)
   createdById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

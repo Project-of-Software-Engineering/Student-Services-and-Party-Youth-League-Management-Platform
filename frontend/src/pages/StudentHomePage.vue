@@ -56,6 +56,10 @@ const noticesQuery = useQuery({
   enabled: session.isAuthed
 });
 
+const unreadNoticeCount = computed(
+  () => (noticesQuery.data.value ?? []).filter((notice: { readAt?: string | null }) => !notice.readAt).length
+);
+
 const policyKeyword = ref("党团");
 
 const policiesQuery = useQuery({
@@ -151,6 +155,17 @@ const approvalMutation = useMutation({
   }
 });
 
+const noticeReadMutation = useMutation({
+  mutationFn: async (noticeId: string) => (await http.post(`/notices/${noticeId}/read`)).data,
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["notices", "my"] });
+  }
+});
+
+const noticeReadErrorMessage = computed(() =>
+  normalizeError(noticeReadMutation.error.value, "通知状态更新失败。")
+);
+
 const approvalErrorMessage = computed(() =>
   normalizeError(approvalMutation.error.value, "审批提交失败。")
 );
@@ -204,8 +219,8 @@ function normalizeError(error: unknown, fallback: string) {
         <span>{{ processQuery.data.value?.reminders?.length ?? 0 }}</span>
       </article>
       <article class="summary-card">
-        <strong>我的通知</strong>
-        <span>{{ noticesQuery.data.value?.length ?? 0 }}</span>
+        <strong>未读通知</strong>
+        <span>{{ unreadNoticeCount }}</span>
       </article>
     </div>
 
@@ -241,6 +256,14 @@ function normalizeError(error: unknown, fallback: string) {
         <strong>政策检索</strong>
         <input v-model="policyKeyword" type="text" placeholder="请输入政策关键词" />
         <span>{{ policyAnswerQuery.data.value?.answer ?? "请输入关键词获取政策指引。" }}</span>
+        <div v-if="policyAnswerQuery.data.value?.sources?.length" class="source-list">
+          <small
+            v-for="source in policyAnswerQuery.data.value.sources"
+            :key="`${source.title}-${source.version}-${source.sourceFileName}`"
+          >
+            来源：{{ source.sourceFileName }} | {{ source.category }} | {{ source.version }}
+          </small>
+        </div>
       </article>
 
       <article v-for="policy in policiesQuery.data.value ?? []" :key="policy.id" class="module-card">
@@ -306,12 +329,25 @@ function normalizeError(error: unknown, fallback: string) {
       </article>
     </div>
 
-    <section class="summary-row">
-      <article v-for="notice in noticesQuery.data.value ?? []" :key="notice.id" class="module-card">
+    <section class="notice-grid">
+      <article v-for="notice in noticesQuery.data.value ?? []" :key="notice.id" class="module-card notice-card" :data-read="Boolean(notice.readAt)">
         <strong>{{ notice.title }}</strong>
         <span>{{ notice.content }}</span>
-        <small>{{ noticeChannelLabels[notice.channel] ?? notice.channel }} | {{ notice.publishedAt ?? "草稿" }}</small>
+        <small>
+          {{ noticeChannelLabels[notice.channel] ?? notice.channel }} |
+          {{ notice.readAt ? `已读 ${notice.readAt}` : "未读" }}
+        </small>
+        <button
+          v-if="!notice.readAt"
+          type="button"
+          class="secondary-button"
+          :disabled="noticeReadMutation.isPending.value"
+          @click="noticeReadMutation.mutate(notice.id)"
+        >
+          标记已读
+        </button>
       </article>
+      <p v-if="noticeReadErrorMessage" class="status-line error">{{ noticeReadErrorMessage }}</p>
     </section>
   </AppShell>
 </template>
@@ -321,14 +357,20 @@ function normalizeError(error: unknown, fallback: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 18px;
+  margin-bottom: 26px;
 }
 
 .timeline-grid,
-.summary-row {
+.summary-row,
+.notice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 18px;
   margin-bottom: 26px;
+}
+
+.notice-grid {
+  align-items: stretch;
 }
 
 .timeline-card,
@@ -360,6 +402,12 @@ function normalizeError(error: unknown, fallback: string) {
   background: #fffdf8;
   color: var(--ruc-ink);
   font: inherit;
+}
+
+.source-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
 }
 
 .approval-panel {
@@ -444,9 +492,30 @@ function normalizeError(error: unknown, fallback: string) {
   cursor: pointer;
 }
 
-.primary-button:disabled {
+.secondary-button {
+  justify-self: flex-start;
+  border: 1px solid var(--ruc-line);
+  padding: 9px 14px;
+  background: #fffdf8;
+  color: var(--ruc-red);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.notice-card[data-read="true"] {
+  background: #fffdf8;
+}
+
+.notice-card {
+  align-content: start;
+  min-height: 0;
 }
 
 .status-line {

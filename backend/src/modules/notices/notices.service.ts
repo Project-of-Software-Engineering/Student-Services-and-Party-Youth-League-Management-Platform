@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { NoticeChannel, Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
@@ -54,6 +54,8 @@ export class NoticesService {
       publishedAt: target.notice.publishedAt?.toISOString() ?? null,
       targetScope: target.notice.targetScope,
       recipientCount: 1,
+      readCount: target.readAt ? 1 : 0,
+      unreadCount: target.readAt ? 0 : 1,
       readAt: target.readAt?.toISOString() ?? null
     }));
   }
@@ -68,16 +70,7 @@ export class NoticesService {
       take: normalizedLimit
     });
 
-    return notices.map((notice) => ({
-      id: notice.id,
-      title: notice.title,
-      content: notice.content,
-      channel: notice.channel,
-      publishedAt: notice.publishedAt?.toISOString() ?? null,
-      targetScope: notice.targetScope,
-      recipientCount: notice.targets.length,
-      readAt: null
-    }));
+    return notices.map((notice) => this.toNoticeResponse(notice));
   }
 
   async publish(dto: PublishNoticeDto, currentUser: AuthUser): Promise<NoticeResponseDto> {
@@ -96,7 +89,11 @@ export class NoticesService {
         targetScope: {
           allStudents: dto.allStudents ?? false,
           targetStudentIds: dto.targetStudentIds ?? [],
-          targetTags: dto.targetTags ?? []
+          targetTags: dto.targetTags ?? [],
+          targetGrades: dto.targetGrades ?? [],
+          targetMajors: dto.targetMajors ?? [],
+          targetClasses: dto.targetClasses ?? [],
+          targetPoliticalStates: dto.targetPoliticalStates ?? []
         },
         targets: {
           create: recipients.map((studentId) => ({
@@ -121,16 +118,7 @@ export class NoticesService {
       }
     });
 
-    return {
-      id: notice.id,
-      title: notice.title,
-      content: notice.content,
-      channel: notice.channel,
-      publishedAt: notice.publishedAt?.toISOString() ?? null,
-      targetScope: notice.targetScope,
-      recipientCount: notice.targets.length,
-      readAt: null
-    };
+    return this.toNoticeResponse(notice);
   }
 
   async createSystemNotice(input: SystemNoticeInput): Promise<NoticeResponseDto> {
@@ -175,26 +163,76 @@ export class NoticesService {
       publishedAt: notice.publishedAt?.toISOString() ?? null,
       targetScope: notice.targetScope,
       recipientCount: notice.targets.length,
+      readCount: 0,
+      unreadCount: notice.targets.length,
       readAt: null
     };
   }
 
-  private async resolveRecipients(dto: PublishNoticeDto): Promise<string[]> {
-    const directIds = dto.targetStudentIds?.filter(Boolean) ?? [];
-    if (directIds.length > 0) {
-      return [...new Set(directIds)];
+  async markAsRead(id: string, currentUser: AuthUser): Promise<NoticeResponseDto> {
+    const student = await this.prisma.student.findUnique({
+      where: {
+        userId: currentUser.id
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!student) {
+      throw new ForbiddenException("当前账号未绑定学生档案，无法标记通知。");
     }
 
-    const targetTags = dto.targetTags?.filter(Boolean) ?? [];
-    if (targetTags.length > 0) {
+    const existingTarget = await this.prisma.noticeTarget.findUnique({
+      where: {
+        noticeId_studentId: {
+          noticeId: id,
+          studentId: student.id
+        }
+      }
+    });
+
+    if (!existingTarget) {
+      throw new NotFoundException("未找到当前学生可访问的通知。");
+    }
+
+    const target = await this.prisma.noticeTarget.update({
+      where: {
+        noticeId_studentId: {
+          noticeId: id,
+          studentId: student.id
+        }
+      },
+      data: {
+        readAt: existingTarget.readAt ?? new Date()
+      },
+      include: {
+        notice: true
+      }
+    });
+
+    return {
+      id: target.notice.id,
+      title: target.notice.title,
+      content: target.notice.content,
+      channel: target.notice.channel,
+      publishedAt: target.notice.publishedAt?.toISOString() ?? null,
+      targetScope: target.notice.targetScope,
+      recipientCount: 1,
+      readCount: 1,
+      unreadCount: 0,
+      readAt: target.readAt?.toISOString() ?? null
+    };
+  }
+
+  private async resolveRecipients(dto: PublishNoticeDto): Promise<string[]> {
+    const directIds = this.normalizeList(dto.targetStudentIds);
+    if (directIds.length > 0) {
+      return directIds;
+    }
+
+    if (dto.allStudents) {
       const students = await this.prisma.student.findMany({
-        where: {
-          profile: {
-            tags: {
-              hasSome: targetTags
-            }
-          }
-        },
         select: {
           id: true
         }
@@ -202,13 +240,87 @@ export class NoticesService {
       return students.map((student) => student.id);
     }
 
+    const targetTags = this.normalizeList(dto.targetTags);
+    const targetGrades = this.normalizeList(dto.targetGrades);
+    const targetMajors = this.normalizeList(dto.targetMajors);
+    const targetClasses = this.normalizeList(dto.targetClasses);
+    const targetPoliticalStates = this.normalizeList(dto.targetPoliticalStates);
+    const where: Prisma.StudentWhereInput = {};
+
+    if (targetGrades.length > 0) {
+      where.grade = {
+        in: targetGrades
+      };
+    }
+
+    if (targetMajors.length > 0) {
+      where.major = {
+        in: targetMajors
+      };
+    }
+
+    if (targetClasses.length > 0) {
+      where.className = {
+        in: targetClasses
+      };
+    }
+
+    if (targetPoliticalStates.length > 0) {
+      where.politicalState = {
+        in: targetPoliticalStates
+      };
+    }
+
+    if (targetTags.length > 0) {
+      where.profile = {
+        tags: {
+          hasSome: targetTags
+        }
+      };
+    }
+
     const students = await this.prisma.student.findMany({
+      where,
       select: {
         id: true
       }
     });
 
     return students.map((student) => student.id);
+  }
+
+  private toNoticeResponse(
+    notice: Prisma.NoticeGetPayload<{
+      include: {
+        targets: true;
+      };
+    }>
+  ): NoticeResponseDto {
+    const readCount = notice.targets.filter((target) => Boolean(target.readAt)).length;
+    const recipientCount = notice.targets.length;
+
+    return {
+      id: notice.id,
+      title: notice.title,
+      content: notice.content,
+      channel: notice.channel,
+      publishedAt: notice.publishedAt?.toISOString() ?? null,
+      targetScope: notice.targetScope,
+      recipientCount,
+      readCount,
+      unreadCount: recipientCount - readCount,
+      readAt: null
+    };
+  }
+
+  private normalizeList(items: string[] | undefined): string[] {
+    return [
+      ...new Set(
+        (items ?? [])
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    ];
   }
 
   private assertCanPublish(currentUser: AuthUser) {

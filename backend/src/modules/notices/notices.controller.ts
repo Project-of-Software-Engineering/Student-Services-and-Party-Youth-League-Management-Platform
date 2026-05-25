@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
@@ -24,5 +24,10 @@ export class NoticesController {
   @Post("publish")
   publish(@Body() dto: PublishNoticeDto, @CurrentUser() currentUser: AuthUser) {
     return this.noticesService.publish(dto, currentUser);
+  }
+
+  @Post(":id/read")
+  markAsRead(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
+    return this.noticesService.markAsRead(id, currentUser);
   }
 }

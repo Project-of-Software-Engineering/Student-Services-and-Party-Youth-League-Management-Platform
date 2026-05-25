@@ -13,6 +13,19 @@ const links = [
   { to: "/leader", label: "领导端" }
 ];
 
+interface PolicyDoc {
+  id: string;
+  title: string;
+  category: string;
+  version: string;
+  sourceFileKey: string;
+  sourceFileName: string;
+  status: "ACTIVE" | "INACTIVE";
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const session = useSessionStore();
 session.hydrate();
 const queryClient = useQueryClient();
@@ -37,7 +50,8 @@ const logsQuery = useQuery({
 
 const policiesQuery = useQuery({
   queryKey: ["policies"],
-  queryFn: async () => (await http.get("/policies")).data,
+  queryFn: async (): Promise<PolicyDoc[]> =>
+    (await http.get("/policies", { params: { includeInactive: true } })).data,
   enabled: session.isAuthed
 });
 
@@ -89,17 +103,27 @@ const importPayload = ref(
   )
 );
 
-const policyForm = ref({
-  title: "综合素质测评办法",
-  category: "日常管理",
-  version: "2026.1",
-  sourceFileName: "综合素质测评办法.md"
-});
+function getDefaultPolicyForm() {
+  return {
+    title: "综合素质测评办法",
+    category: "日常管理",
+    version: "2026.1",
+    sourceFileName: "综合素质测评办法.md"
+  };
+}
+
+const policyForm = ref(getDefaultPolicyForm());
+const editingPolicyId = ref<string | null>(null);
+const policyFile = ref<File | null>(null);
 
 const noticeForm = ref({
   title: "本周学生工作提醒",
   content: "请在周四晚前完成本周周报填报，并及时查看最新政策更新。",
-  targetTags: "团员, 科研"
+  targetTags: "团员, 科研",
+  targetGrades: "2023",
+  targetMajors: "软件工程",
+  targetClasses: "",
+  targetPoliticalStates: ""
 });
 
 const importMutation = useMutation({
@@ -146,13 +170,77 @@ const excelImportMutation = useMutation({
   }
 });
 
+const templateDownloadMutation = useMutation({
+  mutationFn: async () => {
+    const response = await http.get("/students/import-template", { responseType: "blob" });
+    downloadBlob(response.data, "students-import-template.xlsx");
+    return true;
+  }
+});
+
+const studentsExportMutation = useMutation({
+  mutationFn: async () => {
+    const response = await http.get("/students/export", { responseType: "blob" });
+    downloadBlob(response.data, "students-export.xlsx");
+    return true;
+  },
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["logs", "recent"] });
+  }
+});
+
 const policyMutation = useMutation({
-  mutationFn: async () =>
-    (
-      await http.post("/policies", {
-        ...policyForm.value
+  mutationFn: async () => {
+    if (editingPolicyId.value) {
+      if (policyFile.value) {
+        throw new Error("编辑已有政策时不替换附件；如需新增附件版本，请取消编辑后重新上传。");
+      }
+
+      return (
+        await http.patch(`/policies/${editingPolicyId.value}`, {
+          ...policyForm.value
+        })
+      ).data;
+    }
+
+    if (!policyFile.value) {
+      return (
+        await http.post("/policies", {
+          ...policyForm.value
+        })
+      ).data;
+    }
+
+    const formData = new FormData();
+    formData.append("file", policyFile.value);
+    formData.append("title", policyForm.value.title);
+    formData.append("category", policyForm.value.category);
+    formData.append("version", policyForm.value.version);
+    formData.append("sourceFileName", policyForm.value.sourceFileName || policyFile.value.name);
+
+    return (
+      await http.post("/policies/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
       })
-    ).data,
+    ).data;
+  },
+  onSuccess: async () => {
+    policyFile.value = null;
+    editingPolicyId.value = null;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["policies"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+    ]);
+  }
+});
+
+const policyStatusMutation = useMutation({
+  mutationFn: async ({ id, status }: { id: string; status: "ACTIVE" | "INACTIVE" }) => {
+    const endpoint = status === "ACTIVE" ? "activate" : "deactivate";
+    return (await http.post(`/policies/${id}/${endpoint}`)).data;
+  },
   onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["policies"] }),
@@ -167,10 +255,11 @@ const noticeMutation = useMutation({
       await http.post("/notices/publish", {
         title: noticeForm.value.title,
         content: noticeForm.value.content,
-        targetTags: noticeForm.value.targetTags
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
+        targetTags: parseCommaList(noticeForm.value.targetTags),
+        targetGrades: parseCommaList(noticeForm.value.targetGrades),
+        targetMajors: parseCommaList(noticeForm.value.targetMajors),
+        targetClasses: parseCommaList(noticeForm.value.targetClasses),
+        targetPoliticalStates: parseCommaList(noticeForm.value.targetPoliticalStates)
       })
     ).data,
   onSuccess: async () => {
@@ -188,6 +277,14 @@ const importErrorMessage = computed(() => {
 
 const excelImportErrorMessage = computed(() =>
   normalizeError(excelImportMutation.error.value, "Excel 导入请求失败。")
+);
+
+const templateDownloadErrorMessage = computed(() =>
+  normalizeError(templateDownloadMutation.error.value, "导入模板下载失败。")
+);
+
+const studentsExportErrorMessage = computed(() =>
+  normalizeError(studentsExportMutation.error.value, "学生数据导出失败。")
 );
 
 const policyErrorMessage = computed(() =>
@@ -213,7 +310,13 @@ const channelLabels: Record<string, string> = {
 
 const logActionLabels: Record<string, string> = {
   "students.import": "学生导入",
+  "students.template.download": "下载学生导入模板",
+  "students.export": "导出学生数据",
   "policies.create": "新增政策",
+  "policies.upload": "上传政策附件",
+  "policies.update": "编辑政策",
+  "policies.activate": "启用政策",
+  "policies.deactivate": "停用政策",
   "notices.publish": "发布通知",
   "approvals.create": "创建审批",
   "approvals.submit": "提交审批",
@@ -274,6 +377,9 @@ function formatLogDetail(detail: Record<string, unknown> | null | undefined) {
   if (typeof detail.fileName === "string") {
     parts.push(`附件：${detail.fileName}`);
   }
+  if (typeof detail.attachmentId === "string") {
+    parts.push(`附件编号：${detail.attachmentId}`);
+  }
 
   return parts.length > 0 ? parts.join("，") : "无附加详情";
 }
@@ -306,6 +412,69 @@ function normalizeError(error: unknown, fallback: string) {
 function handleExcelFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
   excelImportFile.value = input.files?.[0] ?? null;
+}
+
+function handlePolicyFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (editingPolicyId.value) {
+    input.value = "";
+    policyFile.value = null;
+    return;
+  }
+
+  policyFile.value = input.files?.[0] ?? null;
+  if (policyFile.value) {
+    policyForm.value.sourceFileName = policyFile.value.name;
+  }
+}
+
+function startEditPolicy(policy: PolicyDoc) {
+  editingPolicyId.value = policy.id;
+  policyFile.value = null;
+  policyForm.value = {
+    title: policy.title,
+    category: policy.category,
+    version: policy.version,
+    sourceFileName: policy.sourceFileName
+  };
+}
+
+function copyPolicyAsNewVersion(policy: PolicyDoc) {
+  editingPolicyId.value = null;
+  policyFile.value = null;
+  policyForm.value = {
+    title: policy.title,
+    category: policy.category,
+    version: `${policy.version}.new`,
+    sourceFileName: policy.sourceFileName
+  };
+}
+
+function resetPolicyForm() {
+  editingPolicyId.value = null;
+  policyFile.value = null;
+  policyForm.value = getDefaultPolicyForm();
+}
+
+function getPolicyStatusLabel(status: string) {
+  return status === "INACTIVE" ? "已停用" : "启用中";
+}
+
+function parseCommaList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function downloadBlob(blobPart: BlobPart, fileName: string) {
+  const blob = new Blob([blobPart]);
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
 }
 </script>
 
@@ -347,10 +516,19 @@ function handleExcelFileChange(event: Event) {
           <strong>学生导入</strong>
           <span>支持 Excel 文件导入；JSON 导入保留为结构化数据校验通道。</span>
         </div>
-        <button type="button" class="primary-button" :disabled="excelImportMutation.isPending.value || !excelImportFile" @click="excelImportMutation.mutate()">
-          {{ excelImportMutation.isPending.value ? "导入中..." : "导入 Excel" }}
-        </button>
-      </div>
+          <button type="button" class="primary-button" :disabled="excelImportMutation.isPending.value || !excelImportFile" @click="excelImportMutation.mutate()">
+            {{ excelImportMutation.isPending.value ? "导入中..." : "导入 Excel" }}
+          </button>
+        </div>
+
+        <div class="action-row">
+          <button type="button" class="secondary-button" :disabled="templateDownloadMutation.isPending.value" @click="templateDownloadMutation.mutate()">
+            {{ templateDownloadMutation.isPending.value ? "下载中..." : "下载导入模板" }}
+          </button>
+          <button type="button" class="secondary-button" :disabled="studentsExportMutation.isPending.value" @click="studentsExportMutation.mutate()">
+            {{ studentsExportMutation.isPending.value ? "导出中..." : "导出学生数据" }}
+          </button>
+        </div>
 
       <label class="field">
         <span>Excel 文件</span>
@@ -370,6 +548,12 @@ function handleExcelFileChange(event: Event) {
       </p>
       <p v-if="excelImportErrorMessage" class="status-line error">
         {{ excelImportErrorMessage }}
+      </p>
+      <p v-if="templateDownloadErrorMessage" class="status-line error">
+        {{ templateDownloadErrorMessage }}
+      </p>
+      <p v-if="studentsExportErrorMessage" class="status-line error">
+        {{ studentsExportErrorMessage }}
       </p>
 
       <label class="field">
@@ -403,11 +587,30 @@ function handleExcelFileChange(event: Event) {
         <div class="panel-heading">
           <div>
             <strong>政策知识库</strong>
-            <span>录入政策文档，用于检索、问答提示和学生端查询。</span>
+            <span>录入或上传政策文件，用于检索、问答提示和学生端来源溯源。</span>
           </div>
           <button type="button" class="primary-button" :disabled="policyMutation.isPending.value" @click="policyMutation.mutate()">
-            {{ policyMutation.isPending.value ? "保存中..." : "新增政策" }}
+            {{ policyMutation.isPending.value ? "保存中..." : editingPolicyId ? "保存政策" : policyFile ? "上传政策附件" : "新增政策" }}
           </button>
+        </div>
+
+        <div v-if="editingPolicyId" class="action-row">
+          <span class="status-line">正在编辑已有政策；保存后会覆盖该政策元信息。</span>
+          <button type="button" class="secondary-button" @click="resetPolicyForm">取消编辑</button>
+        </div>
+
+        <div class="upload-zone">
+          <label class="upload-picker">
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,image/png,image/jpeg,image/webp"
+              :disabled="Boolean(editingPolicyId)"
+              @change="handlePolicyFileChange"
+            />
+            <span>选择政策附件</span>
+            <strong>{{ editingPolicyId ? "编辑政策时不替换附件" : policyFile?.name ?? "支持 PDF / Word / Excel / 图片 / TXT / MD" }}</strong>
+          </label>
+          <p>选择文件后点击右上角“上传政策附件”；不选择文件时可直接新增政策记录。</p>
         </div>
 
         <label class="field">
@@ -426,18 +629,38 @@ function handleExcelFileChange(event: Event) {
           <span>来源文件名</span>
           <input v-model="policyForm.sourceFileName" type="text" />
         </label>
+        <p class="status-line">
+          可上传 PDF、Word、Excel、图片或纯文本政策附件，单文件不超过 30MB；不选择附件时按原方式新增政策记录。
+        </p>
 
         <p v-if="policyMutation.data.value" class="status-line success">
-          已保存《{{ policyMutation.data.value.title }}》({{ policyMutation.data.value.version }})。
+          已保存《{{ policyMutation.data.value.title }}》({{ policyMutation.data.value.version }})，来源：{{ policyMutation.data.value.sourceFileName }}。
         </p>
         <p v-if="policyErrorMessage" class="status-line error">
           {{ policyErrorMessage }}
         </p>
 
         <article v-for="policy in policiesQuery.data.value ?? []" :key="policy.id" class="module-card compact-card">
-          <strong>{{ policy.title }}</strong>
-          <span>{{ policy.category }} | {{ policy.version }}</span>
+          <div class="policy-card-heading">
+            <strong>{{ policy.title }}</strong>
+            <span :class="['policy-status', policy.status === 'INACTIVE' ? 'is-muted' : '']">
+              {{ getPolicyStatusLabel(policy.status) }}
+            </span>
+          </div>
+          <span>{{ policy.category }} | {{ policy.version }} | {{ policy.updatedAt }}</span>
           <span>{{ policy.sourceFileName }}</span>
+          <div class="action-row">
+            <button type="button" class="secondary-button" @click="startEditPolicy(policy)">编辑</button>
+            <button type="button" class="secondary-button" @click="copyPolicyAsNewVersion(policy)">复制新版</button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="policyStatusMutation.isPending.value"
+              @click="policyStatusMutation.mutate({ id: policy.id, status: policy.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE' })"
+            >
+              {{ policy.status === "INACTIVE" ? "启用" : "停用" }}
+            </button>
+          </div>
         </article>
       </section>
 
@@ -445,7 +668,7 @@ function handleExcelFileChange(event: Event) {
         <div class="panel-heading">
           <div>
             <strong>通知发布</strong>
-            <span>按学生标签发布站内提醒；标签留空时默认面向全部学生。</span>
+            <span>按年级、专业、班级、政治面貌和标签组合定向发布；筛选留空时面向全部学生。</span>
           </div>
           <button type="button" class="primary-button" :disabled="noticeMutation.isPending.value" @click="noticeMutation.mutate()">
             {{ noticeMutation.isPending.value ? "发布中..." : "发布通知" }}
@@ -460,6 +683,24 @@ function handleExcelFileChange(event: Event) {
           <span>目标标签</span>
           <input v-model="noticeForm.targetTags" type="text" />
         </label>
+        <div class="filter-grid">
+          <label class="field">
+            <span>目标年级</span>
+            <input v-model="noticeForm.targetGrades" type="text" placeholder="例如：2023, 2024" />
+          </label>
+          <label class="field">
+            <span>目标专业</span>
+            <input v-model="noticeForm.targetMajors" type="text" placeholder="例如：软件工程" />
+          </label>
+          <label class="field">
+            <span>目标班级</span>
+            <input v-model="noticeForm.targetClasses" type="text" placeholder="例如：SE-1" />
+          </label>
+          <label class="field">
+            <span>政治面貌</span>
+            <input v-model="noticeForm.targetPoliticalStates" type="text" placeholder="例如：League Member" />
+          </label>
+        </div>
         <label class="field">
           <span>通知内容</span>
           <textarea v-model="noticeForm.content" rows="8" spellcheck="false" />
@@ -474,7 +715,10 @@ function handleExcelFileChange(event: Event) {
 
         <article v-for="notice in publishedNoticesQuery.data.value ?? []" :key="notice.id" class="module-card compact-card">
           <strong>{{ notice.title }}</strong>
-          <span>{{ channelLabels[notice.channel] ?? notice.channel }} | 接收人数 {{ notice.recipientCount }}</span>
+          <span>
+            {{ channelLabels[notice.channel] ?? notice.channel }} | 接收 {{ notice.recipientCount }} |
+            已读 {{ notice.readCount ?? 0 }} | 未读 {{ notice.unreadCount ?? notice.recipientCount }}
+          </span>
           <span>{{ notice.content }}</span>
         </article>
       </section>
@@ -598,10 +842,76 @@ function handleExcelFileChange(event: Event) {
   resize: vertical;
 }
 
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.upload-zone {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px dashed var(--ruc-red);
+  background: #fff4e8;
+}
+
+.upload-zone p {
+  margin: 0;
+  color: var(--ruc-muted);
+}
+
+.upload-picker {
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.upload-picker input {
+  width: 100%;
+  color: var(--ruc-ink);
+  font: inherit;
+}
+
+.upload-picker span {
+  color: var(--ruc-red);
+  font-weight: 800;
+}
+
+.upload-picker strong {
+  font-size: 18px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
 .compact-card {
   padding: 16px;
   border: 1px solid var(--ruc-line);
   box-shadow: none;
+}
+
+.policy-card-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.policy-status {
+  padding: 4px 8px;
+  border: 1px solid rgba(29, 104, 65, 0.35);
+  color: #1d6841;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.policy-status.is-muted {
+  border-color: rgba(116, 98, 91, 0.35);
+  color: var(--ruc-muted);
 }
 
 .primary-button {

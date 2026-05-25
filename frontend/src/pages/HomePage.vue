@@ -6,7 +6,7 @@
         <RouterLink to="/login">统一登录</RouterLink>
         <RouterLink to="/student">学生服务</RouterLink>
         <RouterLink to="/admin">党团管理</RouterLink>
-        <RouterLink to="/leader">领导审批</RouterLink>
+        <RouterLink to="/leader">领导端</RouterLink>
       </nav>
       <div class="history-mark">
         <span>1937</span>
@@ -53,7 +53,7 @@
       </RouterLink>
       <RouterLink to="/leader" class="landing-card">
         <small>04 / APPROVAL</small>
-        <strong>领导审批</strong>
+        <strong>领导端</strong>
         <span>终审事项、审批流转、附件归档与报表摘要。</span>
       </RouterLink>
     </section>

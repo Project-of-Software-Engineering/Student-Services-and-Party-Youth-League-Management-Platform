@@ -246,7 +246,7 @@ function normalizeError(error: unknown, fallback: string) {
 </script>
 
 <template>
-  <AppShell title="领导驾驶舱" subtitle="查看平台运行概况、审批终审事项与附件归档情况。" :links="links">
+  <AppShell title="领导端" subtitle="查看平台运行概况、审批终审事项与附件归档情况。" :links="links">
     <section class="leader-hero">
       <div>
         <span>RUC OVERVIEW</span>

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma, StudentStatus } from "@prisma/client";
+import * as ExcelJS from "exceljs";
 import readXlsxFile from "read-excel-file/node";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
@@ -44,6 +45,36 @@ const REQUIRED_IMPORT_FIELDS: Array<keyof ImportStudentRowDto> = [
   "major",
   "className"
 ];
+
+const STUDENT_EXPORT_HEADERS = [
+  "学号",
+  "姓名",
+  "年级",
+  "专业",
+  "班级",
+  "政治面貌",
+  "状态",
+  "简介",
+  "标签",
+  "荣誉",
+  "竞赛",
+  "实践"
+] as const;
+
+const STUDENT_TEMPLATE_SAMPLE = [
+  "20230001",
+  "李明",
+  "2023",
+  "软件工程",
+  "SE-1",
+  "共青团员",
+  "ACTIVE",
+  "学生简介示例",
+  "团员、科研",
+  "校级优秀学生",
+  "程序设计竞赛二等奖",
+  "志愿服务周"
+] as const;
 
 @Injectable()
 export class StudentsService {
@@ -282,6 +313,96 @@ export class StudentsService {
     );
   }
 
+  async buildImportTemplate(currentUser: AuthUser): Promise<Buffer> {
+    this.assertCanManageStudents(currentUser);
+
+    const workbook = this.createStudentWorkbook("学生导入模板");
+    const tipsWorksheet = workbook.addWorksheet("填写说明");
+    tipsWorksheet.addRow(STUDENT_EXPORT_HEADERS);
+    tipsWorksheet.addRow(STUDENT_TEMPLATE_SAMPLE);
+    tipsWorksheet.addRow([
+      "说明",
+      "必填",
+      "必填",
+      "必填",
+      "必填",
+      "可选",
+      "可选：ACTIVE、LEAVE、GRADUATED、DROPPED_OUT",
+      "可选",
+      "可选：用逗号、顿号或分号分隔",
+      "可选",
+      "可选",
+      "可选"
+    ]);
+    tipsWorksheet.columns.forEach((column) => {
+      column.width = 22;
+    });
+
+    await this.logsService.createOperationLog({
+      action: "students.template.download",
+      targetType: "Student",
+      operatorId: currentUser.id,
+      detail: {
+        fileName: "students-import-template.xlsx"
+      }
+    });
+
+    return this.writeWorkbook(workbook);
+  }
+
+  async exportStudents(currentUser: AuthUser): Promise<Buffer> {
+    this.assertCanManageStudents(currentUser);
+
+    const students = await this.prisma.student.findMany({
+      include: {
+        profile: true
+      },
+      orderBy: [
+        {
+          grade: "asc"
+        },
+        {
+          studentNo: "asc"
+        }
+      ]
+    });
+
+    const workbook = this.createStudentWorkbook("学生数据导出");
+    const worksheet = workbook.getWorksheet("学生数据");
+    if (!worksheet) {
+      throw new Error("学生数据工作表创建失败。");
+    }
+
+    for (const student of students) {
+      worksheet.addRow([
+        student.studentNo,
+        student.name,
+        student.grade,
+        student.major,
+        student.className,
+        student.politicalState ?? "",
+        student.status,
+        student.profile?.bio ?? "",
+        student.profile?.tags.join("、") ?? "",
+        this.stringifyProfileField(student.profile?.honors),
+        this.stringifyProfileField(student.profile?.competitions),
+        this.stringifyProfileField(student.profile?.practices)
+      ]);
+    }
+
+    await this.logsService.createOperationLog({
+      action: "students.export",
+      targetType: "Student",
+      operatorId: currentUser.id,
+      detail: {
+        fileName: "students-export.xlsx",
+        rows: students.length
+      }
+    });
+
+    return this.writeWorkbook(workbook);
+  }
+
   private async parseExcelRows(buffer: Buffer): Promise<ImportStudentRowDto[]> {
     let sheetRows: unknown[][];
     try {
@@ -473,5 +594,64 @@ export class StudentsService {
       ...(row.tags ? { tags: row.tags } : {}),
       ...(row.bio !== undefined ? { bio: row.bio } : {})
     };
+  }
+
+  private createStudentWorkbook(title: string) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Student Services Platform";
+    workbook.created = new Date();
+    workbook.modified = new Date();
+
+    const worksheet = workbook.addWorksheet("学生数据");
+    worksheet.columns = STUDENT_EXPORT_HEADERS.map((header) => ({
+      header,
+      key: header,
+      width: Math.max(String(header).length + 8, 16)
+    }));
+
+    worksheet.getRow(1).font = {
+      bold: true,
+      color: {
+        argb: "FFFFFFFF"
+      }
+    };
+    worksheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: {
+        argb: "FF9D0000"
+      }
+    };
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+    worksheet.properties.defaultRowHeight = 22;
+    worksheet.headerFooter.oddHeader = title;
+
+    return workbook;
+  }
+
+  private stringifyProfileField(value: Prisma.JsonValue | null | undefined): string {
+    if (!value) {
+      return "";
+    }
+
+    if (!Array.isArray(value)) {
+      return String(value);
+    }
+
+    return value
+      .map((item) => {
+        if (item && typeof item === "object" && !Array.isArray(item)) {
+          const record = item as Record<string, unknown>;
+          return String(record.title ?? record.name ?? record.value ?? JSON.stringify(record));
+        }
+        return String(item);
+      })
+      .filter(Boolean)
+      .join("、");
+  }
+
+  private async writeWorkbook(workbook: ExcelJS.Workbook): Promise<Buffer> {
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   }
 }

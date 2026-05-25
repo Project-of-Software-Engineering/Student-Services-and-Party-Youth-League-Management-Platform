@@ -23,4 +23,20 @@ export class PublishNoticeDto {
   @IsOptional()
   @IsArray()
   targetTags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  targetGrades?: string[];
+
+  @IsOptional()
+  @IsArray()
+  targetMajors?: string[];
+
+  @IsOptional()
+  @IsArray()
+  targetClasses?: string[];
+
+  @IsOptional()
+  @IsArray()
+  targetPoliticalStates?: string[];
 }

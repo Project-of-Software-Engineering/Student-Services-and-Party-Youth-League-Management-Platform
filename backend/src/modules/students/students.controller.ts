@@ -5,11 +5,14 @@ import {
   Get,
   Param,
   Post,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
@@ -50,6 +53,26 @@ export class StudentsController {
     return this.studentsService.findAll(currentUser);
   }
 
+  @Get("import-template")
+  async downloadImportTemplate(
+    @CurrentUser() currentUser: AuthUser,
+    @Res({ passthrough: true }) response: Response
+  ): Promise<StreamableFile> {
+    const file = await this.studentsService.buildImportTemplate(currentUser);
+    this.setExcelDownloadHeaders(response, "students-import-template.xlsx", file.length);
+    return new StreamableFile(file);
+  }
+
+  @Get("export")
+  async exportStudents(
+    @CurrentUser() currentUser: AuthUser,
+    @Res({ passthrough: true }) response: Response
+  ): Promise<StreamableFile> {
+    const file = await this.studentsService.exportStudents(currentUser);
+    this.setExcelDownloadHeaders(response, "students-export.xlsx", file.length);
+    return new StreamableFile(file);
+  }
+
   @Get("me")
   findMine(@CurrentUser() currentUser: AuthUser) {
     return this.studentsService.findByUserId(currentUser.id);
@@ -82,5 +105,13 @@ export class StudentsController {
     @CurrentUser() operator: AuthUser
   ) {
     return this.studentsService.importStudentsFromExcel(file, operator);
+  }
+
+  private setExcelDownloadHeaders(response: Response, fileName: string, fileSize: number) {
+    response.set({
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Length": fileSize,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    });
   }
 }

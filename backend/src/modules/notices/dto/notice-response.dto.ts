@@ -6,5 +6,7 @@ export class NoticeResponseDto {
   publishedAt!: string | null;
   targetScope!: unknown;
   recipientCount!: number;
+  readCount!: number;
+  unreadCount!: number;
   readAt!: string | null;
 }
