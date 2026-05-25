@@ -1,9 +1,24 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { useRouter } from "vue-router";
+import { useSessionStore } from "@/stores/session";
+
 defineProps<{
   title: string;
   subtitle: string;
   links: Array<{ to: string; label: string }>;
 }>();
+
+const router = useRouter();
+const session = useSessionStore();
+session.hydrate();
+
+const currentUser = computed(() => session.user);
+
+async function handleLogout() {
+  session.clear();
+  await router.push("/login");
+}
 </script>
 
 <template>
@@ -20,8 +35,15 @@ defineProps<{
         </RouterLink>
       </nav>
       <div class="nav-footer">
-        <span>1937</span>
-        <small>实事求是 · 服务学生成长</small>
+        <div v-if="currentUser" class="session-card">
+          <strong>{{ currentUser.displayName }}</strong>
+          <small>{{ currentUser.username }}</small>
+          <button type="button" @click="handleLogout">退出登录</button>
+        </div>
+        <template v-else>
+          <span>1937</span>
+          <small>实事求是 · 服务学生成长</small>
+        </template>
       </div>
     </aside>
 
@@ -135,6 +157,33 @@ defineProps<{
 
 .nav-footer small {
   line-height: 1.6;
+}
+
+.session-card {
+  display: grid;
+  gap: 8px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.session-card strong {
+  color: #fff7ec;
+  font-size: 16px;
+}
+
+.session-card button {
+  min-height: 40px;
+  margin-top: 6px;
+  border: 1px solid rgba(255, 238, 204, 0.48);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff7ec;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.session-card button:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .shell-main {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "@/components/AppShell.vue";
 import { http } from "@/services/http";
@@ -123,8 +124,14 @@ const approvalsQuery = useQuery({
 
 const approvalMutation = useMutation({
   mutationFn: async () => {
+    const studentId = myStudentId.value;
+    if (!studentId) {
+      throw new Error("当前账号未绑定学生档案，无法在线申请。请使用学生账号登录或联系管理员绑定学生信息。");
+    }
+
     const created = (
       await http.post("/approvals", {
+        studentId,
         type: approvalForm.value.type,
         reason: approvalForm.value.reason
       })
@@ -148,6 +155,8 @@ const approvalErrorMessage = computed(() =>
   normalizeError(approvalMutation.error.value, "审批提交失败。")
 );
 
+const canCreateApproval = computed(() => session.isAuthed && Boolean(myStudentId.value));
+
 function currentApprovalStep(approval: { currentStep: number; steps: Array<{ stepNo: number; roleCode: string }> }) {
   return approval.steps.find((step) => step.stepNo === approval.currentStep + 1)?.roleCode ?? "";
 }
@@ -155,6 +164,18 @@ function currentApprovalStep(approval: { currentStep: number; steps: Array<{ ste
 function normalizeError(error: unknown, fallback: string) {
   if (!error) {
     return "";
+  }
+  if (isAxiosError(error)) {
+    const message = error.response?.data?.message;
+    if (Array.isArray(message)) {
+      return message.join("；");
+    }
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+    if (typeof error.response?.data?.error === "string") {
+      return error.response.data.error;
+    }
   }
   if (error instanceof Error) {
     return error.message;
@@ -235,7 +256,12 @@ function normalizeError(error: unknown, fallback: string) {
           <strong>线上申请与审批</strong>
           <span>提交后进入辅导员、学院、领导三级审批流程。</span>
         </div>
-        <button type="button" class="primary-button" :disabled="approvalMutation.isPending.value" @click="approvalMutation.mutate()">
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="approvalMutation.isPending.value || !canCreateApproval"
+          @click="approvalMutation.mutate()"
+        >
           {{ approvalMutation.isPending.value ? "提交中..." : "创建并提交" }}
         </button>
       </div>
@@ -253,6 +279,9 @@ function normalizeError(error: unknown, fallback: string) {
 
       <p v-if="approvalMutation.data.value" class="status-line success">
         《{{ approvalMutation.data.value.type }}》已提交，当前状态：{{ approvalStatusLabels[approvalMutation.data.value.status] ?? approvalMutation.data.value.status }}。
+      </p>
+      <p v-if="session.isAuthed && !myStudentQuery.isPending.value && !myStudentId" class="status-line error">
+        当前账号未绑定学生档案，无法在线申请。请使用学生账号登录或联系管理员绑定学生信息。
       </p>
       <p v-if="approvalErrorMessage" class="status-line error">{{ approvalErrorMessage }}</p>
 
