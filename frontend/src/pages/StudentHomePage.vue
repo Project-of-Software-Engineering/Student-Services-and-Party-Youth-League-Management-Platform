@@ -302,7 +302,7 @@ function normalizeError(error: unknown, fallback: string) {
     <div class="module-grid">
       <article v-for="item in modules" :key="item" class="module-card">
         <strong>{{ item }}</strong>
-        <span>后续将继续补充对应页面与接口联动能力。</span>
+        <span>已接入学生端核心服务，更多细分操作将按业务优先级逐步完善。</span>
       </article>
     </div>
 

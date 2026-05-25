@@ -6,6 +6,13 @@ import { LogsService } from "../logs/logs.service";
 import { NoticeResponseDto } from "./dto/notice-response.dto";
 import { PublishNoticeDto } from "./dto/publish-notice.dto";
 
+type SystemNoticeInput = {
+  title: string;
+  content: string;
+  studentId: string;
+  targetScope?: Prisma.InputJsonValue;
+};
+
 @Injectable()
 export class NoticesService {
   constructor(
@@ -107,6 +114,52 @@ export class NoticesService {
       targetType: "Notice",
       targetId: notice.id,
       operatorId: currentUser.id,
+      detail: {
+        title: notice.title,
+        recipientCount: notice.targets.length,
+        channel: notice.channel
+      }
+    });
+
+    return {
+      id: notice.id,
+      title: notice.title,
+      content: notice.content,
+      channel: notice.channel,
+      publishedAt: notice.publishedAt?.toISOString() ?? null,
+      targetScope: notice.targetScope,
+      recipientCount: notice.targets.length,
+      readAt: null
+    };
+  }
+
+  async createSystemNotice(input: SystemNoticeInput): Promise<NoticeResponseDto> {
+    const publishedAt = new Date();
+    const notice = await this.prisma.notice.create({
+      data: {
+        title: input.title,
+        content: input.content,
+        channel: NoticeChannel.IN_APP,
+        publishedAt,
+        targetScope: input.targetScope ?? {
+          system: true,
+          targetStudentIds: [input.studentId]
+        },
+        targets: {
+          create: {
+            studentId: input.studentId
+          }
+        }
+      },
+      include: {
+        targets: true
+      }
+    });
+
+    await this.logsService.createOperationLog({
+      action: "notices.system",
+      targetType: "Notice",
+      targetId: notice.id,
       detail: {
         title: notice.title,
         recipientCount: notice.targets.length,

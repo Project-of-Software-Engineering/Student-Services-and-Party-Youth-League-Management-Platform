@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "@/components/AppShell.vue";
 import { http } from "@/services/http";
@@ -55,6 +56,7 @@ const modules = [
 ];
 
 const sourceFileName = ref("管理员手动导入.json");
+const excelImportFile = ref<File | null>(null);
 const importPayload = ref(
   JSON.stringify(
     [
@@ -119,6 +121,31 @@ const importMutation = useMutation({
   }
 });
 
+const excelImportMutation = useMutation({
+  mutationFn: async () => {
+    if (!excelImportFile.value) {
+      throw new Error("请先选择 Excel 文件。");
+    }
+
+    const formData = new FormData();
+    formData.append("file", excelImportFile.value);
+
+    return (
+      await http.post("/students/import/excel", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      })
+    ).data;
+  },
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["students"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+    ]);
+  }
+});
+
 const policyMutation = useMutation({
   mutationFn: async () =>
     (
@@ -159,6 +186,10 @@ const importErrorMessage = computed(() => {
   return normalizeError(error, "导入请求失败。");
 });
 
+const excelImportErrorMessage = computed(() =>
+  normalizeError(excelImportMutation.error.value, "Excel 导入请求失败。")
+);
+
 const policyErrorMessage = computed(() =>
   normalizeError(policyMutation.error.value, "政策请求失败。")
 );
@@ -189,7 +220,8 @@ const logActionLabels: Record<string, string> = {
   "approvals.approved": "审批通过",
   "approvals.rejected": "审批驳回",
   "approvals.returned": "退回审批",
-  "files.upload": "上传附件"
+  "files.upload": "上传附件",
+  "notices.system": "系统通知"
 };
 
 function getRoleLabel(role: string) {
@@ -251,11 +283,29 @@ function normalizeError(error: unknown, fallback: string) {
     return "";
   }
 
+  if (isAxiosError(error)) {
+    const message = error.response?.data?.message;
+    if (Array.isArray(message)) {
+      return message.join("；");
+    }
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+    if (typeof error.response?.data?.error === "string") {
+      return error.response.data.error;
+    }
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
 
   return fallback;
+}
+
+function handleExcelFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  excelImportFile.value = input.files?.[0] ?? null;
 }
 </script>
 
@@ -295,12 +345,32 @@ function normalizeError(error: unknown, fallback: string) {
       <div class="panel-heading">
         <div>
           <strong>学生导入</strong>
-          <span>粘贴结构化 JSON 数据，直接写入学生信息与学生画像。</span>
+          <span>支持 Excel 文件导入；JSON 导入保留为结构化数据校验通道。</span>
         </div>
-        <button type="button" class="primary-button" :disabled="importMutation.isPending.value" @click="importMutation.mutate()">
-          {{ importMutation.isPending.value ? "导入中..." : "执行导入" }}
+        <button type="button" class="primary-button" :disabled="excelImportMutation.isPending.value || !excelImportFile" @click="excelImportMutation.mutate()">
+          {{ excelImportMutation.isPending.value ? "导入中..." : "导入 Excel" }}
         </button>
       </div>
+
+      <label class="field">
+        <span>Excel 文件</span>
+        <input type="file" accept=".xlsx" @change="handleExcelFileChange" />
+      </label>
+
+      <p class="status-line">
+        Excel 表头支持：学号、姓名、年级、专业、班级、政治面貌、状态、简介、标签、荣誉、竞赛、实践；支持 .xlsx，单文件不超过 30MB。
+      </p>
+
+      <p v-if="excelImportMutation.data.value" class="status-line success">
+        Excel 已处理 {{ excelImportMutation.data.value.imported }} 条：
+        新增 {{ excelImportMutation.data.value.created }} 条，
+        更新 {{ excelImportMutation.data.value.updated }} 条，
+        新增画像 {{ excelImportMutation.data.value.profilesCreated }} 条，
+        更新画像 {{ excelImportMutation.data.value.profilesUpdated }} 条。
+      </p>
+      <p v-if="excelImportErrorMessage" class="status-line error">
+        {{ excelImportErrorMessage }}
+      </p>
 
       <label class="field">
         <span>来源文件名</span>
@@ -311,6 +381,10 @@ function normalizeError(error: unknown, fallback: string) {
         <span>导入数据内容</span>
         <textarea v-model="importPayload" rows="14" spellcheck="false" />
       </label>
+
+      <button type="button" class="secondary-button" :disabled="importMutation.isPending.value" @click="importMutation.mutate()">
+        {{ importMutation.isPending.value ? "校验导入中..." : "执行 JSON 导入" }}
+      </button>
 
       <p v-if="importMutation.data.value" class="status-line success">
         已处理 {{ importMutation.data.value.imported }} 条：
@@ -409,7 +483,7 @@ function normalizeError(error: unknown, fallback: string) {
     <div class="module-grid">
       <article v-for="item in modules" :key="item" class="module-card">
         <strong>{{ item }}</strong>
-        <span>后续将继续补充对应表格、筛选条件与操作能力。</span>
+        <span>已接入基础数据能力，筛选、分页和批量操作按验收优先级继续收敛。</span>
       </article>
     </div>
 
@@ -540,7 +614,19 @@ function normalizeError(error: unknown, fallback: string) {
   cursor: pointer;
 }
 
-.primary-button:disabled {
+.secondary-button {
+  justify-self: flex-start;
+  border: 1px solid var(--ruc-line);
+  padding: 11px 16px;
+  background: #fffdf8;
+  color: var(--ruc-red);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
   opacity: 0.6;
   cursor: wait;
 }

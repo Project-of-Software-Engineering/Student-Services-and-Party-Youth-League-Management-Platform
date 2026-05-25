@@ -17,6 +17,7 @@ import {
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
 import { LogsService } from "../logs/logs.service";
+import { NoticesService } from "../notices/notices.service";
 import { ApprovalResponseDto } from "./dto/approval-response.dto";
 import { CreateApprovalDto } from "./dto/create-approval.dto";
 import { DecisionApprovalDto } from "./dto/decision-approval.dto";
@@ -38,7 +39,8 @@ type ApprovalWithRelations = Approval & {
 export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly logsService: LogsService
+    private readonly logsService: LogsService,
+    private readonly noticesService: NoticesService
   ) {}
 
   async findAll(
@@ -336,6 +338,8 @@ export class ApprovalsService {
         comment: dto.comment ?? null
       }
     });
+
+    await this.notifyApprovalResult(approval, decision, isLastStep, currentStep.stepNo, dto.comment);
 
     return this.findOne(id, currentUser);
   }
@@ -701,6 +705,49 @@ export class ApprovalsService {
   private getCurrentStepLabel(approval: ApprovalWithRelations): string {
     const step = approval.steps.find((item) => item.stepNo === approval.currentStep + 1);
     return step ? `${step.stepNo}-${step.roleCode}` : "";
+  }
+
+  private async notifyApprovalResult(
+    approval: ApprovalWithRelations,
+    decision: ApprovalStepDecision,
+    isLastStep: boolean,
+    stepNo: number,
+    comment: string | undefined
+  ) {
+    if (decision === ApprovalStepDecision.APPROVED && !isLastStep) {
+      return;
+    }
+
+    const resultLabel = this.getDecisionNoticeLabel(decision);
+    await this.noticesService.createSystemNotice({
+      title: `审批结果通知：${approval.type}`,
+      content: [
+        `你的“${approval.type}”审批已${resultLabel}。`,
+        `当前处理节点：第 ${stepNo} 节点。`,
+        comment ? `处理意见：${comment}` : "处理意见：无。"
+      ].join("\n"),
+      studentId: approval.studentId,
+      targetScope: {
+        system: true,
+        source: "approval",
+        approvalId: approval.id,
+        decision,
+        finalResult: decision !== ApprovalStepDecision.APPROVED || isLastStep
+      }
+    });
+  }
+
+  private getDecisionNoticeLabel(decision: ApprovalStepDecision): string {
+    if (decision === ApprovalStepDecision.APPROVED) {
+      return "通过";
+    }
+    if (decision === ApprovalStepDecision.REJECTED) {
+      return "驳回";
+    }
+    if (decision === ApprovalStepDecision.RETURNED) {
+      return "退回补充材料";
+    }
+    return "处理";
   }
 
   private escapeCsv(value: unknown): string {

@@ -21,7 +21,7 @@ export interface UploadedFilePayload {
   buffer: Buffer;
 }
 
-export const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+export const MAX_UPLOAD_FILE_SIZE_BYTES = 30 * 1024 * 1024;
 
 export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
@@ -69,7 +69,7 @@ export class FilesService {
       throw new BadRequestException("请上传有效附件。");
     }
     if (file.size > MAX_UPLOAD_FILE_SIZE_BYTES || file.buffer.length > MAX_UPLOAD_FILE_SIZE_BYTES) {
-      throw new BadRequestException("附件大小不能超过 10MB。");
+      throw new BadRequestException("附件大小不能超过 30MB。");
     }
     if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype)) {
       throw new BadRequestException("仅支持 PDF、Word、Excel、图片和纯文本附件。");

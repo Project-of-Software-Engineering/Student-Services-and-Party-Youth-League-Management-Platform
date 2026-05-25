@@ -13,6 +13,9 @@
 - [执行计划](./06-execution-plan.md)
 - [部署验证指南](./07-deployment-verification.md)
 - [协作开发与服务器更新说明](./10-collaboration-workflow.md)
+- [需求文档逐条核查表](./10-requirements-audit.md)
+- [项目已有缺陷整改清单](./11-defect-remediation-list.md)
+- [本机测试网页启动指南](./12-local-test-guide.md)
 
 ## 使用方式
 

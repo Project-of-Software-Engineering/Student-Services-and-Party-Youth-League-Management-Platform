@@ -6,6 +6,7 @@ import { NoticesService } from "./notices.service";
 @Module({
   imports: [LogsModule],
   controllers: [NoticesController],
-  providers: [NoticesService]
+  providers: [NoticesService],
+  exports: [NoticesService]
 })
 export class NoticesModule {}
