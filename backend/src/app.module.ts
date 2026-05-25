@@ -5,6 +5,7 @@ import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { ApprovalsModule } from "./modules/approvals/approvals.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { CertificatesModule } from "./modules/certificates/certificates.module";
 import { FilesModule } from "./modules/files/files.module";
 import { LogsModule } from "./modules/logs/logs.module";
 import { NoticesModule } from "./modules/notices/notices.module";
@@ -29,7 +30,8 @@ import { UsersModule } from "./modules/users/users.module";
     ApprovalsModule,
     NoticesModule,
     FilesModule,
-    LogsModule
+    LogsModule,
+    CertificatesModule
   ]
 })
 export class AppModule {}

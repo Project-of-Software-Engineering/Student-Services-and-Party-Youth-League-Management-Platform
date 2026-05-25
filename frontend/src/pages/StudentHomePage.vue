@@ -172,6 +172,23 @@ const approvalErrorMessage = computed(() =>
 
 const canCreateApproval = computed(() => session.isAuthed && Boolean(myStudentId.value));
 
+const certificatesQuery = useQuery({
+  queryKey: computed(() => ["certificates", "student", myStudentId.value]),
+  queryFn: async () => (await http.get(`/certificates/student/${myStudentId.value}`)).data,
+  enabled: computed(() => session.isAuthed && Boolean(myStudentId.value))
+});
+
+function downloadCertificate(cert: { id: string; certNo: string; title: string; content: string; studentName: string; studentNo: string; issuedAt: string }) {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${cert.title}</title><style>body{font-family:"SimSun",serif;max-width:700px;margin:60px auto;padding:40px;border:2px solid #8b0000;} h1{text-align:center;color:#8b0000;} .cert-no{text-align:right;color:#666;font-size:13px;} .content{line-height:2;margin:30px 0;font-size:16px;} .footer{text-align:right;margin-top:50px;} .seal{color:#8b0000;font-weight:bold;font-size:18px;}</style></head><body><p class="cert-no">编号：${cert.certNo}</p><h1>${cert.title}</h1><div class="content">${cert.content}</div><div class="footer"><p class="seal">学院学生综合服务与党团管理平台</p><p>${new Date(cert.issuedAt).toLocaleDateString("zh-CN")}</p></div></body></html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${cert.title}-${cert.certNo}.html`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
 function currentApprovalStep(approval: { currentStep: number; steps: Array<{ stepNo: number; roleCode: string }> }) {
   return approval.steps.find((step) => step.stepNo === approval.currentStep + 1)?.roleCode ?? "";
 }
@@ -328,6 +345,23 @@ function normalizeError(error: unknown, fallback: string) {
         <span>已接入学生端核心服务，更多细分操作将按业务优先级逐步完善。</span>
       </article>
     </div>
+
+    <section v-if="certificatesQuery.data.value?.length" class="approval-panel">
+      <div class="panel-heading">
+        <div>
+          <strong>我的电子证明</strong>
+          <span>已生成的电子证明可在此查看和下载。</span>
+        </div>
+      </div>
+      <div class="approval-list">
+        <article v-for="cert in certificatesQuery.data.value" :key="cert.id" class="approval-card">
+          <strong>{{ cert.title }}</strong>
+          <span>编号：{{ cert.certNo }} | {{ new Date(cert.issuedAt).toLocaleDateString("zh-CN") }}</span>
+          <small>{{ cert.status === "REVOKED" ? "已撤销" : "有效" }}</small>
+          <button v-if="cert.status !== 'REVOKED'" type="button" class="secondary-button" @click="downloadCertificate(cert)">下载证明</button>
+        </article>
+      </div>
+    </section>
 
     <section class="notice-grid">
       <article v-for="notice in noticesQuery.data.value ?? []" :key="notice.id" class="module-card notice-card" :data-read="Boolean(notice.readAt)">

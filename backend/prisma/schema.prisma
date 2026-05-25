@@ -198,3 +198,37 @@ model OperationLog {
   detail     Json?
   createdAt  DateTime @default(now())
 }
+
+enum CertificateStatus {
+  GENERATED
+  REVOKED
+}
+
+model CertificateTemplate {
+  id          String        @id @default(cuid())
+  name        String
+  type        String
+  content     String
+  fields      String[]
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  certificates Certificate[]
+}
+
+model Certificate {
+  id           String            @id @default(cuid())
+  certNo       String            @unique
+  templateId   String
+  template     CertificateTemplate @relation(fields: [templateId], references: [id])
+  studentId    String
+  studentName  String
+  studentNo    String
+  title        String
+  content      String
+  fieldValues  Json?
+  status       CertificateStatus @default(GENERATED)
+  issuedById   String?
+  issuedAt     DateTime          @default(now())
+  createdAt    DateTime          @default(now())
+}

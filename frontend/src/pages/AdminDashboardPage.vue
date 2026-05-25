@@ -30,6 +30,16 @@ const session = useSessionStore();
 session.hydrate();
 const queryClient = useQueryClient();
 
+const logFilter = ref({
+  action: "",
+  targetType: "",
+  operatorId: "",
+  startDate: "",
+  endDate: "",
+  page: "1",
+  pageSize: "10",
+});
+
 const usersQuery = useQuery({
   queryKey: ["users"],
   queryFn: async () => (await http.get("/users")).data,
@@ -43,8 +53,19 @@ const studentsQuery = useQuery({
 });
 
 const logsQuery = useQuery({
-  queryKey: ["logs", "recent"],
-  queryFn: async () => (await http.get("/logs/recent?limit=8")).data,
+  queryKey: computed(() => ["logs", logFilter.value]),
+  queryFn: async () => {
+    const params: Record<string, string> = {};
+    const f = logFilter.value;
+    if (f.action) params.action = f.action;
+    if (f.targetType) params.targetType = f.targetType;
+    if (f.operatorId) params.operatorId = f.operatorId;
+    if (f.startDate) params.startDate = f.startDate;
+    if (f.endDate) params.endDate = f.endDate;
+    params.page = f.page;
+    params.pageSize = f.pageSize;
+    return (await http.get("/logs", { params })).data;
+  },
   enabled: session.isAuthed
 });
 
@@ -59,6 +80,57 @@ const publishedNoticesQuery = useQuery({
   queryKey: ["notices", "published"],
   queryFn: async () => (await http.get("/notices/published?limit=8")).data,
   enabled: session.isAuthed
+});
+
+const certTemplatesQuery = useQuery({
+  queryKey: ["cert-templates"],
+  queryFn: async () => (await http.get("/certificates/templates")).data,
+  enabled: session.isAuthed
+});
+
+const certificatesQuery = useQuery({
+  queryKey: ["certificates"],
+  queryFn: async () => (await http.get("/certificates")).data,
+  enabled: session.isAuthed
+});
+
+const certTemplateForm = ref({
+  name: "在读证明",
+  type: "ENROLLMENT",
+  content: "兹证明{{studentName}}，学号{{studentNo}}，系我校{{grade}}级{{major}}专业{{className}}班学生，目前在校学习。\n\n特此证明。",
+  fields: "studentName, studentNo, grade, major, className, date, certNo"
+});
+
+const certGenerateForm = ref({
+  templateId: "",
+  studentId: "",
+});
+
+const certTemplateMutation = useMutation({
+  mutationFn: async () => {
+    const fields = certTemplateForm.value.fields.split(",").map(f => f.trim()).filter(Boolean);
+    return (await http.post("/certificates/templates", { ...certTemplateForm.value, fields })).data;
+  },
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["cert-templates"] });
+  }
+});
+
+const certGenerateMutation = useMutation({
+  mutationFn: async () => (await http.post("/certificates/generate", certGenerateForm.value)).data,
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["certificates"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] }),
+    ]);
+  }
+});
+
+const certRevokeM = useMutation({
+  mutationFn: async (id: string) => (await http.post(`/certificates/${id}/revoke`)).data,
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["certificates"] });
+  }
 });
 
 const modules = [
@@ -140,7 +212,7 @@ const importMutation = useMutation({
   onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["students"] }),
-      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
     ]);
   }
 });
@@ -165,7 +237,7 @@ const excelImportMutation = useMutation({
   onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["students"] }),
-      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
     ]);
   }
 });
@@ -185,7 +257,22 @@ const studentsExportMutation = useMutation({
     return true;
   },
   onSuccess: async () => {
-    await queryClient.invalidateQueries({ queryKey: ["logs", "recent"] });
+    await queryClient.invalidateQueries({ queryKey: ["logs"] });
+  }
+});
+
+const logsExportMutation = useMutation({
+  mutationFn: async () => {
+    const params: Record<string, string> = {};
+    const f = logFilter.value;
+    if (f.action) params.action = f.action;
+    if (f.targetType) params.targetType = f.targetType;
+    if (f.operatorId) params.operatorId = f.operatorId;
+    if (f.startDate) params.startDate = f.startDate;
+    if (f.endDate) params.endDate = f.endDate;
+    const response = await http.get("/logs/export", { params, responseType: "blob" });
+    downloadBlob(response.data, `operation-logs-${Date.now()}.xlsx`);
+    return true;
   }
 });
 
@@ -231,7 +318,7 @@ const policyMutation = useMutation({
     editingPolicyId.value = null;
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["policies"] }),
-      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
     ]);
   }
 });
@@ -244,7 +331,7 @@ const policyStatusMutation = useMutation({
   onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["policies"] }),
-      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
     ]);
   }
 });
@@ -265,7 +352,7 @@ const noticeMutation = useMutation({
   onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["notices", "published"] }),
-      queryClient.invalidateQueries({ queryKey: ["logs", "recent"] })
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
     ]);
   }
 });
@@ -731,12 +818,118 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       </article>
     </div>
 
-    <section class="module-list">
-      <article v-for="log in logsQuery.data.value ?? []" :key="log.id" class="module-card">
+    <section class="dual-panel">
+      <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>证明模板管理</strong>
+            <span>创建证明模板，支持变量占位符（如 &#123;&#123;studentName&#125;&#125;）。</span>
+          </div>
+          <button type="button" class="primary-button" :disabled="certTemplateMutation.isPending.value" @click="certTemplateMutation.mutate()">
+            {{ certTemplateMutation.isPending.value ? "保存中..." : "创建模板" }}
+          </button>
+        </div>
+        <label class="field">
+          <span>模板名称</span>
+          <input v-model="certTemplateForm.name" type="text" />
+        </label>
+        <label class="field">
+          <span>类型编码</span>
+          <input v-model="certTemplateForm.type" type="text" placeholder="如 ENROLLMENT, AWARD" />
+        </label>
+        <label class="field">
+          <span>模板内容</span>
+          <textarea v-model="certTemplateForm.content" rows="5" />
+        </label>
+        <label class="field">
+          <span>变量字段（逗号分隔）</span>
+          <input v-model="certTemplateForm.fields" type="text" />
+        </label>
+        <article v-for="tpl in certTemplatesQuery.data.value ?? []" :key="tpl.id" class="module-card compact-card">
+          <strong>{{ tpl.name }}</strong>
+          <span>类型：{{ tpl.type }} | 字段：{{ tpl.fields.join(", ") }}</span>
+        </article>
+      </section>
+
+      <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>生成电子证明</strong>
+            <span>选择模板和学生，生成带编号的电子证明。</span>
+          </div>
+          <button type="button" class="primary-button" :disabled="certGenerateMutation.isPending.value" @click="certGenerateMutation.mutate()">
+            {{ certGenerateMutation.isPending.value ? "生成中..." : "生成证明" }}
+          </button>
+        </div>
+        <label class="field">
+          <span>选择模板</span>
+          <select v-model="certGenerateForm.templateId">
+            <option value="">请选择模板</option>
+            <option v-for="tpl in certTemplatesQuery.data.value ?? []" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>选择学生</span>
+          <select v-model="certGenerateForm.studentId">
+            <option value="">请选择学生</option>
+            <option v-for="stu in studentsQuery.data.value ?? []" :key="stu.id" :value="stu.id">{{ stu.name }}（{{ stu.studentNo }}）</option>
+          </select>
+        </label>
+        <p v-if="certGenerateMutation.data.value" class="status-line success">
+          已生成证明：{{ certGenerateMutation.data.value.certNo }}
+        </p>
+        <article v-for="cert in certificatesQuery.data.value ?? []" :key="cert.id" class="module-card compact-card">
+          <div class="policy-card-heading">
+            <strong>{{ cert.title }} - {{ cert.studentName }}</strong>
+            <span :class="['policy-status', cert.status === 'REVOKED' ? 'is-muted' : '']">{{ cert.status === "REVOKED" ? "已撤销" : "有效" }}</span>
+          </div>
+          <span>编号：{{ cert.certNo }} | {{ new Date(cert.issuedAt).toLocaleDateString("zh-CN") }}</span>
+          <button v-if="cert.status !== 'REVOKED'" type="button" class="secondary-button" @click="certRevokeM.mutate(cert.id)">撤销</button>
+        </article>
+      </section>
+    </section>
+
+    <section class="import-panel">
+      <div class="panel-heading">
+        <div>
+          <strong>操作日志</strong>
+          <span>支持按操作类型、对象类型、时间范围筛选，并可导出 Excel。</span>
+        </div>
+        <button type="button" class="secondary-button" :disabled="logsExportMutation.isPending.value" @click="logsExportMutation.mutate()">
+          {{ logsExportMutation.isPending.value ? "导出中..." : "导出日志" }}
+        </button>
+      </div>
+
+      <div class="filter-grid">
+        <label class="field">
+          <span>操作类型</span>
+          <input v-model="logFilter.action" type="text" placeholder="如 students.import" />
+        </label>
+        <label class="field">
+          <span>对象类型</span>
+          <input v-model="logFilter.targetType" type="text" placeholder="如 Student" />
+        </label>
+        <label class="field">
+          <span>开始时间</span>
+          <input v-model="logFilter.startDate" type="date" />
+        </label>
+        <label class="field">
+          <span>结束时间</span>
+          <input v-model="logFilter.endDate" type="date" />
+        </label>
+      </div>
+
+      <article v-for="log in (logsQuery.data.value?.data ?? [])" :key="log.id" class="module-card compact-card">
         <strong>{{ logActionLabels[log.action] ?? log.action }}</strong>
         <span>{{ log.operator?.displayName ?? "系统" }} | {{ log.createdAt }}</span>
         <span>{{ formatLogDetail(log.detail) }}</span>
       </article>
+
+      <div v-if="logsQuery.data.value" class="action-row">
+        <button type="button" class="secondary-button" :disabled="Number(logFilter.page) <= 1" @click="logFilter.page = String(Number(logFilter.page) - 1)">上一页</button>
+        <span class="status-line">第 {{ logsQuery.data.value.page }} 页 / 共 {{ Math.ceil(logsQuery.data.value.total / logsQuery.data.value.pageSize) }} 页（{{ logsQuery.data.value.total }} 条）</span>
+        <button type="button" class="secondary-button" :disabled="Number(logFilter.page) >= Math.ceil(logsQuery.data.value.total / logsQuery.data.value.pageSize)" @click="logFilter.page = String(Number(logFilter.page) + 1)">下一页</button>
+      </div>
     </section>
   </AppShell>
 </template>
@@ -828,7 +1021,8 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--ruc-line);
