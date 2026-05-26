@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
 import { UserResponseDto } from "./dto/user-response.dto";
@@ -7,7 +7,9 @@ import { UserResponseDto } from "./dto/user-response.dto";
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<UserResponseDto[]> {
+  async findAll(currentUser: AuthUser): Promise<UserResponseDto[]> {
+    this.assertCanViewUsers(currentUser);
+
     const users = await this.prisma.user.findMany({
       include: {
         roles: {
@@ -69,5 +71,12 @@ export class UsersService {
       displayName: user.displayName,
       roles: user.roles.map((item) => item.role.code)
     };
+  }
+
+  private assertCanViewUsers(currentUser: AuthUser) {
+    const allowedRoles = new Set(["admin", "teacher"]);
+    if (!currentUser.roles.some((role) => allowedRoles.has(role))) {
+      throw new ForbiddenException("仅管理员或教师可以查看用户列表。");
+    }
   }
 }

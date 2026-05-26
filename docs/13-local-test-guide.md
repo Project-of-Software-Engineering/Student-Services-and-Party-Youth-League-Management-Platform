@@ -1,6 +1,6 @@
 # 本机测试网页启动指南
 
-本文档用于在本机启动项目，打开测试网页，并完成基础访问验证。以下命令以 Windows PowerShell 为准。
+本文档用于在 Windows PowerShell 中启动本机测试环境、打开网页，并在需要时让同一局域网的手机或其他电脑访问。
 
 ## 1. 前置条件
 
@@ -14,55 +14,25 @@
 cd "~\Desktop\Student-Services-and-Party-Youth-League-Management-Platform"
 ```
 
-## 2. 安装依赖
+## 2. 初始化环境
 
-首次运行或 `package-lock.json` 变化后执行：
+首次运行、依赖变化、数据库结构变化，或需要重置演示数据时执行这一整块。依赖已安装且数据库已初始化时，也可以只执行 `docker compose -f infra\docker-compose.yml up -d`。
 
 ```powershell
 npm.cmd install
-```
-
-如果依赖已经安装，可以跳过本步骤。
-
-## 3. 启动本机依赖服务
-
-启动 PostgreSQL、Redis、MinIO 等本地依赖：
-
-```powershell
 docker compose -f infra\docker-compose.yml up -d
-```
-
-查看容器状态：
-
-```powershell
 docker compose -f infra\docker-compose.yml ps
-```
-
-## 4. 初始化数据库
-
-生成 Prisma Client：
-
-```powershell
 npm.cmd run prisma:generate
-```
-
-执行数据库迁移：
-
-```powershell
 npm.cmd run prisma:migrate
-```
-
-写入演示数据：
-
-```powershell
 npm.cmd run prisma:seed
 ```
 
-## 5. 启动后端服务
+## 3. 启动后端服务
 
-新开一个 PowerShell 终端，在项目根目录执行：
+新开一个 PowerShell 终端，进入项目根目录后执行这一块。该命令会持续运行，不要关闭此终端。
 
 ```powershell
+cd "~\Desktop\Student-Services-and-Party-Youth-League-Management-Platform"
 npm.cmd run dev:backend
 ```
 
@@ -80,11 +50,12 @@ http://127.0.0.1:3001/api/health
 
 浏览器打开健康检查地址，能看到返回结果即表示后端启动正常。
 
-## 6. 启动前端测试网页
+## 4. 启动前端测试网页
 
-再新开一个 PowerShell 终端，在项目根目录执行：
+再新开一个 PowerShell 终端，进入项目根目录后执行这一块。该命令会持续运行，不要关闭此终端。
 
 ```powershell
+cd "~\Desktop\Student-Services-and-Party-Youth-League-Management-Platform"
 npm.cmd run dev:frontend
 ```
 
@@ -92,29 +63,21 @@ npm.cmd run dev:frontend
 
 ```text
 http://127.0.0.1:5173/
-```
-
-也可以使用：
-
-```text
 http://localhost:5173/
 ```
 
-## 7. 让同一局域网的手机或其他电脑访问
+## 5. 让同一局域网的手机或其他电脑访问
 
-如果需要让另一台设备访问本机前端，不使用普通的 `dev:frontend`，改用下面命令启动前端：
+如果需要让另一台设备访问本机前端，不使用上一节的普通前端启动命令，改用下面这一整块。防火墙放行命令需要管理员 PowerShell；如果已经放行过，可以跳过 `netsh` 那一行。
 
 ```powershell
+cd "~\Desktop\Student-Services-and-Party-Youth-League-Management-Platform"
+netsh advfirewall firewall add rule name="Vite 5173" dir=in action=allow protocol=TCP localport=5173
+ipconfig
 npm.cmd --workspace frontend run dev -- --host 0.0.0.0 --port 5173
 ```
 
-查询本机局域网 IPv4 地址：
-
-```powershell
-ipconfig
-```
-
-假设本机 IPv4 地址是 `192.168.1.23`，另一台设备访问：
+在 `ipconfig` 输出中找到本机局域网 IPv4 地址。假设本机 IPv4 地址是 `192.168.1.23`，另一台设备访问：
 
 ```text
 http://192.168.1.23:5173/
@@ -123,16 +86,11 @@ http://192.168.1.23:5173/
 注意：
 
 - 手机和电脑必须连接同一个局域网
-- Windows 防火墙需要允许 `5173` 端口入站访问
+- 另一台设备要访问电脑的局域网 IPv4 地址，不是 `localhost`
 - 后端仍然由前端开发代理通过 `/api` 调用
+- 如果提示防火墙命令权限不足，请用管理员 PowerShell 单独执行 `netsh` 命令
 
-如需手动放行端口，可以使用管理员 PowerShell 执行：
-
-```powershell
-netsh advfirewall firewall add rule name="Vite 5173" dir=in action=allow protocol=TCP localport=5173
-```
-
-## 8. 演示账号
+## 6. 演示账号
 
 ```text
 管理员：demo.admin / demo1234
@@ -140,17 +98,16 @@ netsh advfirewall firewall add rule name="Vite 5173" dir=in action=allow protoco
 学生：demo.student / demo1234
 ```
 
-## 9. 停止本机依赖服务
+## 7. 停止本机服务
 
-测试结束后，可以停止 Docker 依赖服务：
+测试结束后，在前端和后端终端分别按 `Ctrl + C` 停止开发服务，再执行下面这一块停止 Docker 依赖服务。
 
 ```powershell
+cd "~\Desktop\Student-Services-and-Party-Youth-League-Management-Platform"
 docker compose -f infra\docker-compose.yml down
 ```
 
-如果只想停止前端或后端开发服务，在对应终端按 `Ctrl + C`。
-
-## 10. 常见问题
+## 8. 常见问题
 
 如果前端打不开：
 

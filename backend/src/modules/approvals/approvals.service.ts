@@ -183,7 +183,14 @@ export class ApprovalsService {
       pendingFinalCount,
       visibleStudentCount,
       attachmentCount,
-      recentApprovals
+      recentApprovals,
+      politicalStateGroups,
+      noticeTargets,
+      noticeReadCount,
+      policyCount,
+      certificateCount,
+      leagueBranchCount,
+      templateCount
     ] = await Promise.all([
       this.prisma.approval.groupBy({
         by: ["status"],
@@ -222,6 +229,31 @@ export class ApprovalsService {
         include: this.approvalInclude,
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         take: 6
+      }),
+      this.prisma.student.groupBy({
+        by: ["politicalState"],
+        where: {
+          status: "ACTIVE"
+        },
+        _count: {
+          _all: true
+        }
+      }),
+      this.prisma.noticeTarget.count(),
+      this.prisma.noticeTarget.count({
+        where: {
+          readAt: {
+            not: null
+          }
+        }
+      }),
+      this.prisma.policyDoc.count(),
+      this.prisma.certificate.count(),
+      this.prisma.leagueBranch.count(),
+      this.prisma.businessTemplate.count({
+        where: {
+          enabled: true
+        }
       })
     ]);
 
@@ -235,13 +267,29 @@ export class ApprovalsService {
         total: Object.values(counts).reduce((sum, value) => sum + value, 0),
         pendingFinal: pendingFinalCount,
         attachments: attachmentCount,
-        activeStudents: visibleStudentCount
+        activeStudents: visibleStudentCount,
+        policies: policyCount,
+        certificates: certificateCount,
+        leagueBranches: leagueBranchCount,
+        templates: templateCount,
+        noticeTargets,
+        noticeRead: noticeReadCount
       },
       typeDistribution: typeGroups.map((item) => ({
         type: item.type,
         count: item._count._all
       })),
-      recent
+      recent,
+      politicalStateDistribution: politicalStateGroups.map((item) => ({
+        name: item.politicalState ?? "未填写",
+        count: item._count._all
+      })),
+      noticeReach: {
+        total: noticeTargets,
+        read: noticeReadCount,
+        unread: Math.max(noticeTargets - noticeReadCount, 0),
+        readRate: noticeTargets > 0 ? Math.round((noticeReadCount / noticeTargets) * 100) : 0
+      }
     };
   }
 

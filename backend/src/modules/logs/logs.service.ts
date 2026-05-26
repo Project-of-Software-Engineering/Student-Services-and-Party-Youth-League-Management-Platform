@@ -1,7 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma, User } from "@prisma/client";
 import * as ExcelJS from "exceljs";
 import { PrismaService } from "../../common/prisma/prisma.service";
+import { AuthUser } from "../auth/interfaces/auth-user.interface";
 import { OperationLogResponseDto } from "./dto/operation-log-response.dto";
 import { QueryLogsDto } from "./dto/query-logs.dto";
 
@@ -17,7 +18,9 @@ interface CreateOperationLogInput {
 export class LogsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findFiltered(query: QueryLogsDto) {
+  async findFiltered(query: QueryLogsDto, currentUser: AuthUser) {
+    this.assertCanAudit(currentUser);
+
     const page = Math.max(Number(query.page) || 1, 1);
     const pageSize = Math.min(Math.max(Number(query.pageSize) || 20, 1), 100);
     const where = this.buildWhere(query);
@@ -41,7 +44,9 @@ export class LogsService {
     };
   }
 
-  async findByTarget(targetType: string, targetId: string) {
+  async findByTarget(targetType: string, targetId: string, currentUser: AuthUser) {
+    this.assertCanAudit(currentUser);
+
     const logs = await this.prisma.operationLog.findMany({
       where: { targetType, targetId },
       include: { operator: true },
@@ -62,7 +67,9 @@ export class LogsService {
     });
   }
 
-  async exportToExcel(query: QueryLogsDto): Promise<Buffer> {
+  async exportToExcel(query: QueryLogsDto, currentUser: AuthUser): Promise<Buffer> {
+    this.assertCanAudit(currentUser);
+
     const where = this.buildWhere(query);
     const logs = await this.prisma.operationLog.findMany({
       where,
@@ -115,6 +122,13 @@ export class LogsService {
       if (query.endDate) where.createdAt.lte = new Date(query.endDate);
     }
     return where;
+  }
+
+  private assertCanAudit(currentUser: AuthUser) {
+    const allowedRoles = new Set(["admin", "teacher"]);
+    if (!currentUser.roles.some((role) => allowedRoles.has(role))) {
+      throw new ForbiddenException("仅管理员或教师可以查看操作日志。");
+    }
   }
 
   private toResponse(

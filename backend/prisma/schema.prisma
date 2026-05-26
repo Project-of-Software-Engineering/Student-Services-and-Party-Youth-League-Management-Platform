@@ -58,6 +58,7 @@ model User {
   roles        UserRole[]
   approvals    ApprovalStep[] @relation("ApprovalOperator")
   logs         OperationLog[]
+  managedLeagueBranches LeagueBranch[] @relation("LeagueBranchMaintainer")
 }
 
 model Role {
@@ -90,8 +91,11 @@ model Student {
   userId         String?         @unique
   user           User?           @relation(fields: [userId], references: [id])
   profile        StudentProfile?
+  profileChanges StudentProfileChangeRequest[]
   approvals      Approval[]
   noticeTargets  NoticeTarget[]
+  leagueBranchId String?
+  leagueBranch   LeagueBranch?    @relation(fields: [leagueBranchId], references: [id])
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 }
@@ -116,6 +120,7 @@ model PolicyDoc {
   version        String
   sourceFileKey  String
   sourceFileName String
+  contentText    String?
   status         PolicyStatus @default(ACTIVE)
   createdById    String?
   createdAt      DateTime @default(now())
@@ -204,6 +209,51 @@ enum CertificateStatus {
   REVOKED
 }
 
+model LeagueBranch {
+  id            String   @id @default(cuid())
+  name          String
+  grade         String
+  major         String
+  className     String
+  secretaryName String?
+  contact       String?
+  description   String?
+  activityPlan  String?
+  memberSummary Json?
+  maintainedById String?
+  maintainedBy   User?    @relation("LeagueBranchMaintainer", fields: [maintainedById], references: [id])
+  students      Student[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([grade, major, className])
+  @@index([maintainedById])
+}
+
+model BusinessTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  category       String
+  businessType   String
+  description    String?
+  fileAttachmentId String?
+  fileName       String?
+  content        String?
+  enabled        Boolean  @default(true)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([category, businessType])
+  @@index([enabled])
+}
+
+enum ProfileChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model CertificateTemplate {
   id          String        @id @default(cuid())
   name        String
@@ -231,4 +281,20 @@ model Certificate {
   issuedById   String?
   issuedAt     DateTime          @default(now())
   createdAt    DateTime          @default(now())
+}
+
+model StudentProfileChangeRequest {
+  id            String              @id @default(cuid())
+  studentId     String
+  student       Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  requestedData Json
+  status        ProfileChangeStatus @default(PENDING)
+  reviewComment String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([studentId, status])
+  @@index([status, createdAt])
 }

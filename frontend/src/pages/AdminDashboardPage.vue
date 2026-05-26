@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
+import { useRoute } from "vue-router";
 import AppShell from "@/components/AppShell.vue";
 import { http } from "@/services/http";
 import { useSessionStore } from "@/stores/session";
@@ -20,6 +21,7 @@ interface PolicyDoc {
   version: string;
   sourceFileKey: string;
   sourceFileName: string;
+  contentText: string | null;
   status: "ACTIVE" | "INACTIVE";
   createdById: string | null;
   createdAt: string;
@@ -29,6 +31,35 @@ interface PolicyDoc {
 const session = useSessionStore();
 session.hydrate();
 const queryClient = useQueryClient();
+const route = useRoute();
+const canUseCoreAdmin = computed(() =>
+  Boolean(session.user?.roles.some((role) => role === "admin" || role === "teacher"))
+);
+const canViewAdminAudit = computed(() =>
+  Boolean(session.user?.roles.some((role) => role === "admin" || role === "teacher" || role === "leader"))
+);
+
+const adminSections = [
+  { key: "overview", to: "/admin", label: "总览" },
+  { key: "students", to: "/admin/students", label: "学生导入" },
+  { key: "organizations", to: "/admin/organizations", label: "组织维护" },
+  { key: "policies", to: "/admin/policies", label: "政策维护" },
+  { key: "notices", to: "/admin/notices", label: "通知发布" },
+  { key: "templates", to: "/admin/templates", label: "模板配置" },
+  { key: "certificates", to: "/admin/certificates", label: "电子证明" },
+  { key: "logs", to: "/admin/logs", label: "操作日志" }
+] as const;
+
+type AdminSectionKey = (typeof adminSections)[number]["key"];
+
+const activeAdminSection = computed<AdminSectionKey>(() => {
+  const matched = adminSections.find((item) => item.to === route.path);
+  return matched?.key ?? "overview";
+});
+
+function isAdminSection(...sections: AdminSectionKey[]) {
+  return sections.includes(activeAdminSection.value);
+}
 
 const logFilter = ref({
   action: "",
@@ -43,13 +74,19 @@ const logFilter = ref({
 const usersQuery = useQuery({
   queryKey: ["users"],
   queryFn: async () => (await http.get("/users")).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const studentsQuery = useQuery({
   queryKey: ["students"],
   queryFn: async () => (await http.get("/students")).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
+});
+
+const profileChangeRequestsQuery = useQuery({
+  queryKey: ["students", "profile-requests"],
+  queryFn: async () => (await http.get("/students/profile-requests")).data,
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const logsQuery = useQuery({
@@ -66,32 +103,44 @@ const logsQuery = useQuery({
     params.pageSize = f.pageSize;
     return (await http.get("/logs", { params })).data;
   },
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canViewAdminAudit.value)
 });
 
 const policiesQuery = useQuery({
   queryKey: ["policies"],
   queryFn: async (): Promise<PolicyDoc[]> =>
     (await http.get("/policies", { params: { includeInactive: true } })).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const publishedNoticesQuery = useQuery({
   queryKey: ["notices", "published"],
   queryFn: async () => (await http.get("/notices/published?limit=8")).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const certTemplatesQuery = useQuery({
   queryKey: ["cert-templates"],
   queryFn: async () => (await http.get("/certificates/templates")).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const certificatesQuery = useQuery({
   queryKey: ["certificates"],
   queryFn: async () => (await http.get("/certificates")).data,
-  enabled: session.isAuthed
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
+});
+
+const leagueBranchesQuery = useQuery({
+  queryKey: ["league-branches"],
+  queryFn: async () => (await http.get("/league-branches")).data,
+  enabled: computed(() => session.isAuthed)
+});
+
+const businessTemplatesQuery = useQuery({
+  queryKey: ["business-templates"],
+  queryFn: async () => (await http.get("/business-templates", { params: { includeDisabled: true } })).data,
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
 });
 
 const certTemplateForm = ref({
@@ -137,9 +186,36 @@ const modules = [
   "审批队列",
   "通知发布",
   "学生导入",
+  "组织维护",
   "政策维护",
+  "模板配置",
   "操作日志"
 ];
+
+const branchForm = ref({
+  name: "2023级软件工程 SE-1 班团支部",
+  grade: "2023",
+  major: "软件工程",
+  className: "SE-1",
+  secretaryName: "班团骨干",
+  contact: "demo.secretary",
+  description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
+  activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
+  leagueMembers: "24",
+  partyApplicants: "6",
+  volunteers: "18"
+});
+const editingBranchId = ref<string | null>(null);
+
+const businessTemplateForm = ref({
+  name: "党团发展材料模板",
+  category: "党团工作",
+  businessType: "PARTY_DEVELOPMENT",
+  description: "用于团校培养、积极分子考察和发展对象审查材料归档。",
+  fileName: "党团发展材料模板.docx",
+  content: "包含思想汇报、培养联系人意见、支部大会记录和阶段审核意见。"
+});
+const editingBusinessTemplateId = ref<string | null>(null);
 
 const sourceFileName = ref("管理员手动导入.json");
 const excelImportFile = ref<File | null>(null);
@@ -180,7 +256,8 @@ function getDefaultPolicyForm() {
     title: "综合素质测评办法",
     category: "日常管理",
     version: "2026.1",
-    sourceFileName: "综合素质测评办法.md"
+    sourceFileName: "综合素质测评办法.md",
+    contentText: "综合素质测评主要参考思想政治表现、课程学习、社会实践、志愿服务、科研竞赛和集体贡献。学生应按学院通知提交佐证材料，逾期未提交的项目原则上不纳入当期测评。"
   };
 }
 
@@ -216,6 +293,30 @@ const importMutation = useMutation({
     ]);
   }
 });
+
+const profileChangeReviewMutation = useMutation({
+  mutationFn: async ({ id, action }: { id: string; action: "approve" | "reject" }) =>
+    (await http.post(`/students/profile-requests/${id}/${action}`, {})).data,
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["students", "profile-requests"] }),
+      queryClient.invalidateQueries({ queryKey: ["students"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
+const profileChangeReviewErrorMessage = computed(() =>
+  normalizeError(profileChangeReviewMutation.error.value, "画像审核操作失败。")
+);
+
+const pendingProfileChangeCount = computed(
+  () =>
+    (profileChangeRequestsQuery.data.value ?? []).filter(
+      (item: { status: string }) => item.status === "PENDING"
+    ).length
+);
+
 
 const excelImportMutation = useMutation({
   mutationFn: async () => {
@@ -254,6 +355,79 @@ const studentsExportMutation = useMutation({
   mutationFn: async () => {
     const response = await http.get("/students/export", { responseType: "blob" });
     downloadBlob(response.data, "students-export.xlsx");
+    return true;
+  },
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["logs"] });
+  }
+});
+
+const branchMutation = useMutation({
+  mutationFn: async () => {
+    const payload = {
+      name: branchForm.value.name,
+      grade: branchForm.value.grade,
+      major: branchForm.value.major,
+      className: branchForm.value.className,
+      secretaryName: branchForm.value.secretaryName,
+      contact: branchForm.value.contact,
+      description: branchForm.value.description,
+      activityPlan: branchForm.value.activityPlan,
+      memberSummary: {
+        leagueMembers: Number(branchForm.value.leagueMembers || 0),
+        partyApplicants: Number(branchForm.value.partyApplicants || 0),
+        volunteers: Number(branchForm.value.volunteers || 0)
+      }
+    };
+
+    if (editingBranchId.value) {
+      return (await http.patch(`/league-branches/${editingBranchId.value}`, payload)).data;
+    }
+    return (await http.post("/league-branches", payload)).data;
+  },
+  onSuccess: async () => {
+    editingBranchId.value = null;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["league-branches"] }),
+      queryClient.invalidateQueries({ queryKey: ["students"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
+const businessTemplateMutation = useMutation({
+  mutationFn: async () => {
+    if (editingBusinessTemplateId.value) {
+      return (
+        await http.patch(`/business-templates/${editingBusinessTemplateId.value}`, businessTemplateForm.value)
+      ).data;
+    }
+    return (await http.post("/business-templates", businessTemplateForm.value)).data;
+  },
+  onSuccess: async () => {
+    editingBusinessTemplateId.value = null;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["business-templates"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
+const businessTemplateStatusMutation = useMutation({
+  mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
+    (await http.post(`/business-templates/${id}/${enabled ? "enable" : "disable"}`)).data,
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["business-templates"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
+const policyExportMutation = useMutation({
+  mutationFn: async () => {
+    const response = await http.get("/policies/export", { responseType: "blob" });
+    downloadBlob(response.data, "policies-export.xlsx");
     return true;
   },
   onSuccess: async () => {
@@ -304,6 +478,7 @@ const policyMutation = useMutation({
     formData.append("category", policyForm.value.category);
     formData.append("version", policyForm.value.version);
     formData.append("sourceFileName", policyForm.value.sourceFileName || policyFile.value.name);
+    formData.append("contentText", policyForm.value.contentText);
 
     return (
       await http.post("/policies/upload", formData, {
@@ -374,8 +549,20 @@ const studentsExportErrorMessage = computed(() =>
   normalizeError(studentsExportMutation.error.value, "学生数据导出失败。")
 );
 
+const branchErrorMessage = computed(() =>
+  normalizeError(branchMutation.error.value, "班团组织保存失败。")
+);
+
+const businessTemplateErrorMessage = computed(() =>
+  normalizeError(businessTemplateMutation.error.value, "业务模板保存失败。")
+);
+
 const policyErrorMessage = computed(() =>
   normalizeError(policyMutation.error.value, "政策请求失败。")
+);
+
+const policyExportErrorMessage = computed(() =>
+  normalizeError(policyExportMutation.error.value, "政策台账导出失败。")
 );
 
 const noticeErrorMessage = computed(() =>
@@ -386,7 +573,8 @@ const roleLabels: Record<string, string> = {
   admin: "管理员",
   teacher: "教师",
   leader: "领导",
-  student: "学生"
+  student: "学生",
+  league_secretary: "班团骨干"
 };
 
 const channelLabels: Record<string, string> = {
@@ -399,11 +587,21 @@ const logActionLabels: Record<string, string> = {
   "students.import": "学生导入",
   "students.template.download": "下载学生导入模板",
   "students.export": "导出学生数据",
+  "students.profile_change.submit": "提交画像变更",
+  "students.profile_change.approve": "通过画像变更",
+  "students.profile_change.reject": "驳回画像变更",
+  "league_branches.create": "新增班团组织",
+  "league_branches.update": "更新班团组织",
+  "business_templates.create": "新增业务模板",
+  "business_templates.update": "更新业务模板",
+  "business_templates.enable": "启用业务模板",
+  "business_templates.disable": "停用业务模板",
   "policies.create": "新增政策",
   "policies.upload": "上传政策附件",
   "policies.update": "编辑政策",
   "policies.activate": "启用政策",
   "policies.deactivate": "停用政策",
+  "policies.export": "导出政策台账",
   "notices.publish": "发布通知",
   "approvals.create": "创建审批",
   "approvals.submit": "提交审批",
@@ -452,6 +650,9 @@ function formatLogDetail(detail: Record<string, unknown> | null | undefined) {
   if (typeof detail.sourceFileName === "string") {
     parts.push(`来源文件：${detail.sourceFileName}`);
   }
+  if (typeof detail.hasContentText === "boolean") {
+    parts.push(detail.hasContentText ? "已录入正文摘要" : "未录入正文摘要");
+  }
   if (typeof detail.type === "string") {
     parts.push(`类型：${detail.type}`);
   }
@@ -466,6 +667,18 @@ function formatLogDetail(detail: Record<string, unknown> | null | undefined) {
   }
   if (typeof detail.attachmentId === "string") {
     parts.push(`附件编号：${detail.attachmentId}`);
+  }
+  if (typeof detail.name === "string") {
+    parts.push(`名称：${detail.name}`);
+  }
+  if (typeof detail.grade === "string") {
+    parts.push(`年级：${detail.grade}`);
+  }
+  if (typeof detail.major === "string") {
+    parts.push(`专业：${detail.major}`);
+  }
+  if (typeof detail.className === "string") {
+    parts.push(`班级：${detail.className}`);
   }
 
   return parts.length > 0 ? parts.join("，") : "无附加详情";
@@ -522,7 +735,8 @@ function startEditPolicy(policy: PolicyDoc) {
     title: policy.title,
     category: policy.category,
     version: policy.version,
-    sourceFileName: policy.sourceFileName
+    sourceFileName: policy.sourceFileName,
+    contentText: policy.contentText ?? ""
   };
 }
 
@@ -533,7 +747,8 @@ function copyPolicyAsNewVersion(policy: PolicyDoc) {
     title: policy.title,
     category: policy.category,
     version: `${policy.version}.new`,
-    sourceFileName: policy.sourceFileName
+    sourceFileName: policy.sourceFileName,
+    contentText: policy.contentText ?? ""
   };
 }
 
@@ -541,6 +756,83 @@ function resetPolicyForm() {
   editingPolicyId.value = null;
   policyFile.value = null;
   policyForm.value = getDefaultPolicyForm();
+}
+
+function startEditBranch(branch: {
+  id: string;
+  name: string;
+  grade: string;
+  major: string;
+  className: string;
+  secretaryName?: string | null;
+  contact?: string | null;
+  description?: string | null;
+  activityPlan?: string | null;
+  memberSummary?: Record<string, unknown> | null;
+}) {
+  editingBranchId.value = branch.id;
+  branchForm.value = {
+    name: branch.name,
+    grade: branch.grade,
+    major: branch.major,
+    className: branch.className,
+    secretaryName: branch.secretaryName ?? "",
+    contact: branch.contact ?? "",
+    description: branch.description ?? "",
+    activityPlan: branch.activityPlan ?? "",
+    leagueMembers: String(branch.memberSummary?.leagueMembers ?? ""),
+    partyApplicants: String(branch.memberSummary?.partyApplicants ?? ""),
+    volunteers: String(branch.memberSummary?.volunteers ?? "")
+  };
+}
+
+function resetBranchForm() {
+  editingBranchId.value = null;
+  branchForm.value = {
+    name: "2023级软件工程 SE-1 班团支部",
+    grade: "2023",
+    major: "软件工程",
+    className: "SE-1",
+    secretaryName: "班团骨干",
+    contact: "demo.secretary",
+    description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
+    activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
+    leagueMembers: "24",
+    partyApplicants: "6",
+    volunteers: "18"
+  };
+}
+
+function startEditBusinessTemplate(template: {
+  id: string;
+  name: string;
+  category: string;
+  businessType: string;
+  description?: string | null;
+  fileName?: string | null;
+  content?: string | null;
+}) {
+  editingBusinessTemplateId.value = template.id;
+  businessTemplateForm.value = {
+    name: template.name,
+    category: template.category,
+    businessType: template.businessType,
+    description: template.description ?? "",
+    fileName: template.fileName ?? "",
+    content: template.content ?? ""
+  };
+}
+
+function resetBusinessTemplateForm() {
+  editingBusinessTemplateId.value = null;
+  businessTemplateForm.value = {
+    name: "党团发展材料模板",
+    category: "党团工作",
+    businessType: "PARTY_DEVELOPMENT",
+    description: "用于团校培养、积极分子考察和发展对象审查材料归档。",
+    fileName: "党团发展材料模板.docx",
+    content: "包含思想汇报、培养联系人意见、支部大会记录和阶段审核意见。"
+  };
 }
 
 function getPolicyStatusLabel(status: string) {
@@ -597,7 +889,18 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       </article>
     </div>
 
-    <section class="import-panel">
+    <nav class="admin-section-nav" aria-label="管理端功能导航">
+      <RouterLink
+        v-for="section in adminSections"
+        :key="section.key"
+        :to="section.to"
+        :class="{ active: activeAdminSection === section.key }"
+      >
+        {{ section.label }}
+      </RouterLink>
+    </nav>
+
+    <section v-if="isAdminSection('students')" class="import-panel">
       <div class="panel-heading">
         <div>
           <strong>学生导入</strong>
@@ -667,18 +970,248 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       <p v-if="importErrorMessage" class="status-line error">
         {{ importErrorMessage }}
       </p>
+
+      <section class="module-card compact-card">
+        <div class="policy-card-heading">
+          <strong>画像变更审核</strong>
+          <span>待审 {{ pendingProfileChangeCount }}</span>
+        </div>
+        <p v-if="profileChangeReviewErrorMessage" class="status-line error">
+          {{ profileChangeReviewErrorMessage }}
+        </p>
+        <article
+          v-for="request in profileChangeRequestsQuery.data.value ?? []"
+          :key="request.id"
+          class="module-card compact-card"
+        >
+          <strong>{{ request.student.name }}（{{ request.student.studentNo }}）</strong>
+          <span>
+            {{ request.status === "PENDING" ? "待审核" : request.status === "APPROVED" ? "已通过" : "已驳回" }}
+            | {{ request.createdAt }}
+          </span>
+          <span v-if="request.requestedData.bio">简介：{{ request.requestedData.bio }}</span>
+          <span v-if="request.requestedData.tags?.length">标签：{{ request.requestedData.tags.join("、") }}</span>
+          <div v-if="request.status === 'PENDING'" class="action-row">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="profileChangeReviewMutation.isPending.value"
+              @click="profileChangeReviewMutation.mutate({ id: request.id, action: 'approve' })"
+            >
+              通过
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="profileChangeReviewMutation.isPending.value"
+              @click="profileChangeReviewMutation.mutate({ id: request.id, action: 'reject' })"
+            >
+              驳回
+            </button>
+          </div>
+        </article>
+      </section>
     </section>
 
-    <section class="dual-panel">
+    <section v-if="isAdminSection('organizations')" class="dual-panel">
       <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>班团组织维护</strong>
+            <span>班团骨干可维护本人负责班级，管理员和教师可维护全部班团组织。</span>
+          </div>
+          <button type="button" class="primary-button" :disabled="branchMutation.isPending.value" @click="branchMutation.mutate()">
+            {{ branchMutation.isPending.value ? "保存中..." : editingBranchId ? "保存组织" : "新增组织" }}
+          </button>
+        </div>
+
+        <div v-if="editingBranchId" class="action-row">
+          <span class="status-line">正在编辑已有班团组织。</span>
+          <button type="button" class="secondary-button" @click="resetBranchForm">取消编辑</button>
+        </div>
+
+        <label class="field">
+          <span>组织名称</span>
+          <input v-model="branchForm.name" type="text" />
+        </label>
+        <div class="filter-grid">
+          <label class="field">
+            <span>年级</span>
+            <input v-model="branchForm.grade" type="text" />
+          </label>
+          <label class="field">
+            <span>专业</span>
+            <input v-model="branchForm.major" type="text" />
+          </label>
+          <label class="field">
+            <span>班级</span>
+            <input v-model="branchForm.className" type="text" />
+          </label>
+        </div>
+        <div class="filter-grid">
+          <label class="field">
+            <span>负责人</span>
+            <input v-model="branchForm.secretaryName" type="text" />
+          </label>
+          <label class="field">
+            <span>联系方式</span>
+            <input v-model="branchForm.contact" type="text" />
+          </label>
+        </div>
+        <label class="field">
+          <span>组织说明</span>
+          <textarea v-model="branchForm.description" rows="5" />
+        </label>
+        <label class="field">
+          <span>近期工作计划</span>
+          <textarea v-model="branchForm.activityPlan" rows="5" />
+        </label>
+        <div class="filter-grid">
+          <label class="field">
+            <span>团员数</span>
+            <input v-model="branchForm.leagueMembers" type="number" min="0" />
+          </label>
+          <label class="field">
+            <span>入党积极分子</span>
+            <input v-model="branchForm.partyApplicants" type="number" min="0" />
+          </label>
+          <label class="field">
+            <span>志愿服务骨干</span>
+            <input v-model="branchForm.volunteers" type="number" min="0" />
+          </label>
+        </div>
+
+        <p v-if="branchMutation.data.value" class="status-line success">
+          已保存班团组织：{{ branchMutation.data.value.name }}。
+        </p>
+        <p v-if="branchErrorMessage" class="status-line error">{{ branchErrorMessage }}</p>
+      </section>
+
+      <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>组织信息台账</strong>
+            <span>展示班团组织、负责人、成员绑定和近期计划。</span>
+          </div>
+        </div>
+        <article v-for="branch in leagueBranchesQuery.data.value ?? []" :key="branch.id" class="module-card compact-card">
+          <div class="policy-card-heading">
+            <strong>{{ branch.name }}</strong>
+            <span class="policy-status">{{ branch.memberCount }} 人</span>
+          </div>
+          <span>{{ branch.grade }} | {{ branch.major }} | {{ branch.className }}</span>
+          <span>负责人：{{ branch.secretaryName ?? "未填写" }} | {{ branch.contact ?? "无联系方式" }}</span>
+          <span v-if="branch.description">说明：{{ branch.description }}</span>
+          <span v-if="branch.activityPlan">计划：{{ branch.activityPlan }}</span>
+          <span v-if="branch.memberSummary">
+            团员 {{ branch.memberSummary.leagueMembers ?? 0 }}，
+            入党积极分子 {{ branch.memberSummary.partyApplicants ?? 0 }}，
+            志愿服务骨干 {{ branch.memberSummary.volunteers ?? 0 }}
+          </span>
+          <div class="action-row">
+            <button type="button" class="secondary-button" @click="startEditBranch(branch)">编辑</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section v-if="isAdminSection('templates')" class="dual-panel">
+      <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>业务模板配置</strong>
+            <span>按业务类型维护材料模板、说明和下载文件名，补齐模板配置闭环。</span>
+          </div>
+          <button type="button" class="primary-button" :disabled="businessTemplateMutation.isPending.value" @click="businessTemplateMutation.mutate()">
+            {{ businessTemplateMutation.isPending.value ? "保存中..." : editingBusinessTemplateId ? "保存模板" : "新增模板" }}
+          </button>
+        </div>
+
+        <div v-if="editingBusinessTemplateId" class="action-row">
+          <span class="status-line">正在编辑已有业务模板。</span>
+          <button type="button" class="secondary-button" @click="resetBusinessTemplateForm">取消编辑</button>
+        </div>
+
+        <label class="field">
+          <span>模板名称</span>
+          <input v-model="businessTemplateForm.name" type="text" />
+        </label>
+        <div class="filter-grid">
+          <label class="field">
+            <span>模板分类</span>
+            <input v-model="businessTemplateForm.category" type="text" />
+          </label>
+          <label class="field">
+            <span>业务类型编码</span>
+            <input v-model="businessTemplateForm.businessType" type="text" />
+          </label>
+        </div>
+        <label class="field">
+          <span>模板文件名</span>
+          <input v-model="businessTemplateForm.fileName" type="text" />
+        </label>
+        <label class="field">
+          <span>模板说明</span>
+          <textarea v-model="businessTemplateForm.description" rows="5" />
+        </label>
+        <label class="field">
+          <span>模板内容摘要</span>
+          <textarea v-model="businessTemplateForm.content" rows="6" />
+        </label>
+
+        <p v-if="businessTemplateMutation.data.value" class="status-line success">
+          已保存业务模板：{{ businessTemplateMutation.data.value.name }}。
+        </p>
+        <p v-if="businessTemplateErrorMessage" class="status-line error">{{ businessTemplateErrorMessage }}</p>
+      </section>
+
+      <section class="import-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>模板台账</strong>
+            <span>可编辑、启用或停用业务模板。</span>
+          </div>
+        </div>
+        <article v-for="template in businessTemplatesQuery.data.value ?? []" :key="template.id" class="module-card compact-card">
+          <div class="policy-card-heading">
+            <strong>{{ template.name }}</strong>
+            <span :class="['policy-status', template.enabled ? '' : 'is-muted']">
+              {{ template.enabled ? "启用中" : "已停用" }}
+            </span>
+          </div>
+          <span>{{ template.category }} | {{ template.businessType }} | {{ template.fileName ?? "未绑定文件" }}</span>
+          <span v-if="template.description">{{ template.description }}</span>
+          <span v-if="template.content">摘要：{{ template.content }}</span>
+          <div class="action-row">
+            <button type="button" class="secondary-button" @click="startEditBusinessTemplate(template)">编辑</button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="businessTemplateStatusMutation.isPending.value"
+              @click="businessTemplateStatusMutation.mutate({ id: template.id, enabled: !template.enabled })"
+            >
+              {{ template.enabled ? "停用" : "启用" }}
+            </button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section v-if="isAdminSection('policies', 'notices')" class="dual-panel">
+      <section v-if="isAdminSection('policies')" class="import-panel">
         <div class="panel-heading">
           <div>
             <strong>政策知识库</strong>
             <span>录入或上传政策文件，用于检索、问答提示和学生端来源溯源。</span>
           </div>
-          <button type="button" class="primary-button" :disabled="policyMutation.isPending.value" @click="policyMutation.mutate()">
-            {{ policyMutation.isPending.value ? "保存中..." : editingPolicyId ? "保存政策" : policyFile ? "上传政策附件" : "新增政策" }}
-          </button>
+          <div class="action-row">
+            <button type="button" class="secondary-button" :disabled="policyExportMutation.isPending.value" @click="policyExportMutation.mutate()">
+              {{ policyExportMutation.isPending.value ? "导出中..." : "导出政策台账" }}
+            </button>
+            <button type="button" class="primary-button" :disabled="policyMutation.isPending.value" @click="policyMutation.mutate()">
+              {{ policyMutation.isPending.value ? "保存中..." : editingPolicyId ? "保存政策" : policyFile ? "上传政策附件" : "新增政策" }}
+            </button>
+          </div>
         </div>
 
         <div v-if="editingPolicyId" class="action-row">
@@ -716,8 +1249,16 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
           <span>来源文件名</span>
           <input v-model="policyForm.sourceFileName" type="text" />
         </label>
+        <label class="field">
+          <span>正文摘要/政策要点</span>
+          <textarea
+            v-model="policyForm.contentText"
+            rows="8"
+            placeholder="录入政策正文摘要、适用对象、办理条件和关键流程，用于学生端政策问答匹配。"
+          />
+        </label>
         <p class="status-line">
-          可上传 PDF、Word、Excel、图片或纯文本政策附件，单文件不超过 30MB；不选择附件时按原方式新增政策记录。
+          可上传 PDF、Word、Excel、图片或纯文本政策附件，单文件不超过 30MB；TXT/MD 会自动提取正文，手动录入的正文摘要优先用于问答匹配。
         </p>
 
         <p v-if="policyMutation.data.value" class="status-line success">
@@ -725,6 +1266,9 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
         </p>
         <p v-if="policyErrorMessage" class="status-line error">
           {{ policyErrorMessage }}
+        </p>
+        <p v-if="policyExportErrorMessage" class="status-line error">
+          {{ policyExportErrorMessage }}
         </p>
 
         <article v-for="policy in policiesQuery.data.value ?? []" :key="policy.id" class="module-card compact-card">
@@ -736,6 +1280,7 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
           </div>
           <span>{{ policy.category }} | {{ policy.version }} | {{ policy.updatedAt }}</span>
           <span>{{ policy.sourceFileName }}</span>
+          <span v-if="policy.contentText">要点：{{ policy.contentText.slice(0, 120) }}{{ policy.contentText.length > 120 ? "..." : "" }}</span>
           <div class="action-row">
             <button type="button" class="secondary-button" @click="startEditPolicy(policy)">编辑</button>
             <button type="button" class="secondary-button" @click="copyPolicyAsNewVersion(policy)">复制新版</button>
@@ -751,7 +1296,7 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
         </article>
       </section>
 
-      <section class="import-panel">
+      <section v-if="isAdminSection('notices')" class="import-panel">
         <div class="panel-heading">
           <div>
             <strong>通知发布</strong>
@@ -811,14 +1356,14 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       </section>
     </section>
 
-    <div class="module-grid">
+    <div v-if="isAdminSection('overview')" class="module-grid">
       <article v-for="item in modules" :key="item" class="module-card">
         <strong>{{ item }}</strong>
         <span>已接入基础数据能力，筛选、分页和批量操作按验收优先级继续收敛。</span>
       </article>
     </div>
 
-    <section class="dual-panel">
+    <section v-if="isAdminSection('certificates')" class="dual-panel">
       <section class="import-panel">
         <div class="panel-heading">
           <div>
@@ -889,7 +1434,7 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       </section>
     </section>
 
-    <section class="import-panel">
+    <section v-if="isAdminSection('logs')" class="import-panel">
       <div class="panel-heading">
         <div>
           <strong>操作日志</strong>
@@ -941,6 +1486,31 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 18px;
   margin-bottom: 26px;
+}
+
+.admin-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 26px;
+  padding: 14px;
+  background: #fffaf2;
+  border: 1px solid var(--ruc-line);
+  box-shadow: var(--ruc-shadow);
+}
+
+.admin-section-nav a {
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  color: var(--ruc-muted);
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.admin-section-nav a.active {
+  border-color: rgba(157, 0, 0, 0.28);
+  background: rgba(157, 0, 0, 0.08);
+  color: var(--ruc-red);
 }
 
 .dual-panel,

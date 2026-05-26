@@ -10,7 +10,7 @@
 
 ## 本机测试启动
 
-完整步骤见 [本机测试网页启动指南](./docs/12-local-test-guide.md)。
+完整步骤见 [本机测试网页启动指南](./docs/13-local-test-guide.md)。交付验收时同步参考 [权限矩阵](./docs/16-permission-matrix.md)、[用户操作手册](./docs/17-user-operation-manual.md) 和 [交付验收检查清单](./docs/18-acceptance-checklist.md)。
 
 首次运行或依赖变化后安装依赖：
 

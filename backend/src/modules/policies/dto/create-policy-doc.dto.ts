@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 
 export class CreatePolicyDocDto {
   @IsString()
@@ -17,4 +17,9 @@ export class CreatePolicyDocDto {
   @IsOptional()
   @IsString()
   sourceFileName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  contentText?: string;
 }

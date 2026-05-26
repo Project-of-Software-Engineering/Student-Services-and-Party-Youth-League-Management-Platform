@@ -60,7 +60,8 @@ async function main() {
     ["admin", "系统管理员"],
     ["teacher", "教师"],
     ["leader", "领导"],
-    ["student", "学生"]
+    ["student", "学生"],
+    ["league_secretary", "班团骨干"]
   ];
 
   for (const [code, name] of roleCodes) {
@@ -134,6 +135,21 @@ async function main() {
     }
   });
 
+  const leagueSecretary = await prisma.user.upsert({
+    where: { username: "demo.secretary" },
+    update: {
+      displayName: "班团骨干",
+      passwordHash: studentPasswordHash,
+      status: "ACTIVE"
+    },
+    create: {
+      username: "demo.secretary",
+      displayName: "班团骨干",
+      passwordHash: studentPasswordHash,
+      status: "ACTIVE"
+    }
+  });
+
   const roles = await prisma.role.findMany();
   const roleMap = new Map(roles.map((role) => [role.code, role.id]));
 
@@ -141,7 +157,8 @@ async function main() {
     [admin.id, roleMap.get("admin")],
     [teacher.id, roleMap.get("teacher")],
     [leader.id, roleMap.get("leader")],
-    [studentUser.id, roleMap.get("student")]
+    [studentUser.id, roleMap.get("student")],
+    [leagueSecretary.id, roleMap.get("league_secretary")]
   ];
 
   for (const [userId, roleId] of userRolePairs) {
@@ -238,6 +255,102 @@ async function main() {
     }
   });
 
+  const seOneBranch = await prisma.leagueBranch.upsert({
+    where: {
+      grade_major_className: {
+        grade: "2023",
+        major: "软件工程",
+        className: "SE-1"
+      }
+    },
+    update: {
+      name: "2023级软件工程 SE-1 班团支部",
+      secretaryName: "班团骨干",
+      contact: "demo.secretary",
+      description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
+      activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
+      memberSummary: {
+        leagueMembers: 24,
+        partyApplicants: 6,
+        volunteers: 18
+      },
+      maintainedById: leagueSecretary.id
+    },
+    create: {
+      name: "2023级软件工程 SE-1 班团支部",
+      grade: "2023",
+      major: "软件工程",
+      className: "SE-1",
+      secretaryName: "班团骨干",
+      contact: "demo.secretary",
+      description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
+      activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
+      memberSummary: {
+        leagueMembers: 24,
+        partyApplicants: 6,
+        volunteers: 18
+      },
+      maintainedById: leagueSecretary.id
+    }
+  });
+
+  await prisma.student.updateMany({
+    where: {
+      grade: "2023",
+      major: "软件工程",
+      className: "SE-1"
+    },
+    data: {
+      leagueBranchId: seOneBranch.id
+    }
+  });
+
+  const templateSeeds = [
+    {
+      name: "党团发展材料模板",
+      category: "党团工作",
+      businessType: "PARTY_DEVELOPMENT",
+      description: "用于团校培养、积极分子考察和发展对象审查材料归档。",
+      fileName: "党团发展材料模板.docx",
+      content: "包含思想汇报、培养联系人意见、支部大会记录和阶段审核意见。"
+    },
+    {
+      name: "奖助学金申请材料清单",
+      category: "奖助管理",
+      businessType: "SCHOLARSHIP",
+      description: "用于奖助学金申请前材料准备和学院复核。",
+      fileName: "奖助学金申请材料清单.xlsx",
+      content: "包含成绩证明、荣誉证明、家庭经济情况说明和班级民主评议记录。"
+    }
+  ];
+
+  for (const item of templateSeeds) {
+    const existing = await prisma.businessTemplate.findFirst({
+      where: {
+        name: item.name,
+        businessType: item.businessType
+      }
+    });
+    if (existing) {
+      await prisma.businessTemplate.update({
+        where: { id: existing.id },
+        data: {
+          ...item,
+          enabled: true,
+          createdById: admin.id
+        }
+      });
+      continue;
+    }
+    await prisma.businessTemplate.create({
+      data: {
+        ...item,
+        enabled: true,
+        createdById: admin.id
+      }
+    });
+  }
+
   await prisma.studentProfile.upsert({
     where: { studentId: secondStudent.id },
     update: {
@@ -263,21 +376,27 @@ async function main() {
       category: "奖助管理",
       version: "2026.1",
       sourceFileKey: "seed/policies/scholarship-review-guidelines.md",
-      sourceFileName: "奖助学金评审办法.md"
+      sourceFileName: "奖助学金评审办法.md",
+      contentText:
+        "奖助学金评审坚持公开、公平、公正原则，综合参考学生思想表现、学业成绩、社会实践、志愿服务和家庭经济情况。学生应在学院通知期限内提交申请材料，班级初评后进入学院复核，最终结果经公示无异议后确认。"
     },
     {
       title: "党员发展流程手册",
       category: "党团工作",
       version: "2026.1",
       sourceFileKey: "seed/policies/party-development-process-handbook.md",
-      sourceFileName: "党员发展流程手册.md"
+      sourceFileName: "党员发展流程手册.md",
+      contentText:
+        "党员发展流程包括申请提交、团校培养、积极分子考察、发展对象审查和最终审批等环节。学生需按阶段完成思想汇报、培养联系人谈话、实践记录和材料归档，系统会根据当前阶段展示提醒。"
     },
     {
       title: "团学活动考勤规定",
       category: "党团工作",
       version: "2026.1",
       sourceFileKey: "seed/policies/league-activity-attendance-rules.md",
-      sourceFileName: "团学活动考勤规定.md"
+      sourceFileName: "团学活动考勤规定.md",
+      contentText:
+        "团学活动考勤以签到记录、请假审批和活动负责人确认结果为准。学生因课程冲突、病假或其他合理原因无法参加活动时，应提前提交说明并补充证明材料，未经批准缺勤将影响相关评价。"
     }
   ];
 
@@ -298,6 +417,7 @@ async function main() {
           category: item.category,
           sourceFileKey: item.sourceFileKey,
           sourceFileName: item.sourceFileName,
+          contentText: item.contentText,
           createdById: admin.id
         }
       });

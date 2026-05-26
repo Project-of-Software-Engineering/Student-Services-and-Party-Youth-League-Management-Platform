@@ -120,9 +120,23 @@ const approvalForm = ref({
   reason: "本人已完成本阶段培养、实践和材料整理，申请进入线上审批流程。"
 });
 
+const profileChangeForm = ref({
+  bio: "希望更新个人公开画像简介，补充近期学习实践和服务经历。",
+  tags: "团员, 志愿服务, 科研",
+  honors: "校级优秀学生",
+  competitions: "程序设计竞赛二等奖",
+  practices: "志愿服务周 36 小时"
+});
+
 const approvalsQuery = useQuery({
   queryKey: ["approvals", "mine"],
   queryFn: async () => (await http.get("/approvals", { params: { mine: true, limit: 6 } })).data,
+  enabled: session.isAuthed
+});
+
+const profileChangeRequestsQuery = useQuery({
+  queryKey: ["students", "me", "profile-requests"],
+  queryFn: async () => (await http.get("/students/me/profile-requests")).data,
   enabled: session.isAuthed
 });
 
@@ -155,6 +169,22 @@ const approvalMutation = useMutation({
   }
 });
 
+const profileChangeMutation = useMutation({
+  mutationFn: async () =>
+    (
+      await http.post("/students/me/profile-requests", {
+        bio: profileChangeForm.value.bio,
+        tags: parseCommaList(profileChangeForm.value.tags),
+        honors: parsePlainItems(profileChangeForm.value.honors, "荣誉"),
+        competitions: parsePlainItems(profileChangeForm.value.competitions, "竞赛"),
+        practices: parsePlainItems(profileChangeForm.value.practices, "实践")
+      })
+    ).data,
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["students", "me", "profile-requests"] });
+  }
+});
+
 const noticeReadMutation = useMutation({
   mutationFn: async (noticeId: string) => (await http.post(`/notices/${noticeId}/read`)).data,
   onSuccess: async () => {
@@ -170,6 +200,10 @@ const approvalErrorMessage = computed(() =>
   normalizeError(approvalMutation.error.value, "审批提交失败。")
 );
 
+const profileChangeErrorMessage = computed(() =>
+  normalizeError(profileChangeMutation.error.value, "画像变更申请提交失败。")
+);
+
 const canCreateApproval = computed(() => session.isAuthed && Boolean(myStudentId.value));
 
 const certificatesQuery = useQuery({
@@ -179,7 +213,8 @@ const certificatesQuery = useQuery({
 });
 
 function downloadCertificate(cert: { id: string; certNo: string; title: string; content: string; studentName: string; studentNo: string; issuedAt: string }) {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${cert.title}</title><style>body{font-family:"SimSun",serif;max-width:700px;margin:60px auto;padding:40px;border:2px solid #8b0000;} h1{text-align:center;color:#8b0000;} .cert-no{text-align:right;color:#666;font-size:13px;} .content{line-height:2;margin:30px 0;font-size:16px;} .footer{text-align:right;margin-top:50px;} .seal{color:#8b0000;font-weight:bold;font-size:18px;}</style></head><body><p class="cert-no">编号：${cert.certNo}</p><h1>${cert.title}</h1><div class="content">${cert.content}</div><div class="footer"><p class="seal">学院学生综合服务与党团管理平台</p><p>${new Date(cert.issuedAt).toLocaleDateString("zh-CN")}</p></div></body></html>`;
+  const contentHtml = escapeHtml(cert.content).replace(/\r?\n/g, "<br>");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(cert.title)}</title><style>body{font-family:"SimSun",serif;max-width:700px;margin:60px auto;padding:40px;border:2px solid #8b0000;} h1{text-align:center;color:#8b0000;} .cert-no{text-align:right;color:#666;font-size:13px;} .content{line-height:2;margin:30px 0;font-size:16px;} .footer{text-align:right;margin-top:50px;} .seal{color:#8b0000;font-weight:bold;font-size:18px;}</style></head><body><p class="cert-no">编号：${escapeHtml(cert.certNo)}</p><h1>${escapeHtml(cert.title)}</h1><div class="content">${contentHtml}</div><div class="footer"><p class="seal">学院学生综合服务与党团管理平台</p><p>${new Date(cert.issuedAt).toLocaleDateString("zh-CN")}</p></div></body></html>`;
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -189,8 +224,31 @@ function downloadCertificate(cert: { id: string; certNo: string; title: string; 
   window.URL.revokeObjectURL(url);
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function currentApprovalStep(approval: { currentStep: number; steps: Array<{ stepNo: number; roleCode: string }> }) {
   return approval.steps.find((step) => step.stepNo === approval.currentStep + 1)?.roleCode ?? "";
+}
+
+function parseCommaList(value: string) {
+  return value
+    .split(/[,\uFF0C;\u3001;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parsePlainItems(value: string, type: string) {
+  return parseCommaList(value).map((item) => ({
+    title: item,
+    type
+  }));
 }
 
 function normalizeError(error: unknown, fallback: string) {
@@ -279,6 +337,9 @@ function normalizeError(error: unknown, fallback: string) {
             :key="`${source.title}-${source.version}-${source.sourceFileName}`"
           >
             来源：{{ source.sourceFileName }} | {{ source.category }} | {{ source.version }}
+            <template v-if="source.excerpt">
+              | 摘要：{{ source.excerpt }}
+            </template>
           </small>
         </div>
       </article>
@@ -286,6 +347,7 @@ function normalizeError(error: unknown, fallback: string) {
       <article v-for="policy in policiesQuery.data.value ?? []" :key="policy.id" class="module-card">
         <strong>{{ policy.title }}</strong>
         <span>{{ policy.category }} | {{ policy.version }}</span>
+        <span v-if="policy.contentText">要点：{{ policy.contentText.slice(0, 90) }}{{ policy.contentText.length > 90 ? "..." : "" }}</span>
         <small>{{ policy.sourceFileName }}</small>
       </article>
     </section>
@@ -345,6 +407,60 @@ function normalizeError(error: unknown, fallback: string) {
         <span>已接入学生端核心服务，更多细分操作将按业务优先级逐步完善。</span>
       </article>
     </div>
+
+    <section class="approval-panel">
+      <div class="panel-heading">
+        <div>
+          <strong>公开画像变更申请</strong>
+          <span>提交简介、标签、荣誉、竞赛和实践经历更新，审核通过后展示到个人画像。</span>
+        </div>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="profileChangeMutation.isPending.value || !myStudentId"
+          @click="profileChangeMutation.mutate()"
+        >
+          {{ profileChangeMutation.isPending.value ? "提交中..." : "提交画像变更" }}
+        </button>
+      </div>
+
+      <div class="approval-form">
+        <label class="field">
+          <span>公开简介</span>
+          <textarea v-model="profileChangeForm.bio" rows="5" />
+        </label>
+        <label class="field">
+          <span>标签</span>
+          <input v-model="profileChangeForm.tags" type="text" placeholder="用逗号或顿号分隔" />
+        </label>
+        <label class="field">
+          <span>荣誉</span>
+          <input v-model="profileChangeForm.honors" type="text" placeholder="用逗号或顿号分隔" />
+        </label>
+        <label class="field">
+          <span>竞赛</span>
+          <input v-model="profileChangeForm.competitions" type="text" placeholder="用逗号或顿号分隔" />
+        </label>
+        <label class="field">
+          <span>实践</span>
+          <input v-model="profileChangeForm.practices" type="text" placeholder="用逗号或顿号分隔" />
+        </label>
+      </div>
+
+      <p v-if="profileChangeMutation.data.value" class="status-line success">
+        画像变更申请已提交，等待管理员或教师审核。
+      </p>
+      <p v-if="profileChangeErrorMessage" class="status-line error">{{ profileChangeErrorMessage }}</p>
+
+      <div class="approval-list">
+        <article v-for="request in profileChangeRequestsQuery.data.value ?? []" :key="request.id" class="approval-card">
+          <strong>画像变更申请</strong>
+          <span>状态：{{ request.status === "PENDING" ? "待审核" : request.status === "APPROVED" ? "已通过" : "已驳回" }}</span>
+          <span v-if="request.reviewComment">审核意见：{{ request.reviewComment }}</span>
+          <small>{{ request.createdAt }}</small>
+        </article>
+      </div>
+    </section>
 
     <section v-if="certificatesQuery.data.value?.length" class="approval-panel">
       <div class="panel-heading">

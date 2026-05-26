@@ -83,7 +83,12 @@ const summaryCards = computed(() => [
   { title: "领导终审", value: counts.value.pendingFinal ?? 0, desc: "已流转至领导节点的事项" },
   { title: "已通过", value: counts.value.approved ?? 0, desc: "完成全部流程并归档" },
   { title: "退回补充", value: counts.value.returned ?? 0, desc: "需学生补充材料后再提交" },
-  { title: "附件数", value: counts.value.attachments ?? 0, desc: "审批关联证明材料" }
+  { title: "附件数", value: counts.value.attachments ?? 0, desc: "审批关联证明材料" },
+  { title: "活跃学生", value: counts.value.activeStudents ?? 0, desc: "当前在校活跃学生规模" },
+  { title: "班团组织", value: counts.value.leagueBranches ?? 0, desc: "已维护班团组织数量" },
+  { title: "业务模板", value: counts.value.templates ?? 0, desc: "已启用材料模板数量" },
+  { title: "政策文档", value: counts.value.policies ?? 0, desc: "知识库政策台账数量" },
+  { title: "电子证明", value: counts.value.certificates ?? 0, desc: "已生成电子证明数量" }
 ]);
 
 const decisionMutation = useMutation({
@@ -381,6 +386,30 @@ function normalizeError(error: unknown, fallback: string) {
           <div class="type-list">
             <span v-for="item in summaryQuery.data.value?.typeDistribution ?? []" :key="item.type">
               {{ item.type }} <strong>{{ item.count }}</strong>
+            </span>
+          </div>
+        </section>
+
+        <section class="tool-panel">
+          <div class="section-heading">
+            <strong>综合运行统计</strong>
+            <span>通知触达与政治面貌分布。</span>
+          </div>
+          <div class="type-list">
+            <span>
+              通知接收 <strong>{{ summaryQuery.data.value?.noticeReach?.total ?? 0 }}</strong>
+            </span>
+            <span>
+              已读通知 <strong>{{ summaryQuery.data.value?.noticeReach?.read ?? 0 }}</strong>
+            </span>
+            <span>
+              阅读率 <strong>{{ summaryQuery.data.value?.noticeReach?.readRate ?? 0 }}%</strong>
+            </span>
+            <span
+              v-for="item in summaryQuery.data.value?.politicalStateDistribution ?? []"
+              :key="item.name"
+            >
+              {{ item.name }} <strong>{{ item.count }}</strong>
             </span>
           </div>
         </section>

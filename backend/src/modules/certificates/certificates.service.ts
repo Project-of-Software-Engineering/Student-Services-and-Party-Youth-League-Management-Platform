@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { CreateTemplateDto, GenerateCertificateDto } from "./dto/certificate.dto";
 import { LogsService } from "../logs/logs.service";
+import { AuthUser } from "../auth/interfaces/auth-user.interface";
 
 @Injectable()
 export class CertificatesService {
@@ -10,37 +12,45 @@ export class CertificatesService {
     private readonly logsService: LogsService,
   ) {}
 
-  async createTemplate(dto: CreateTemplateDto, userId?: string) {
+  async createTemplate(dto: CreateTemplateDto, currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     const template = await this.prisma.certificateTemplate.create({
       data: {
         name: dto.name,
         type: dto.type,
         content: dto.content,
         fields: dto.fields,
-        createdById: userId,
+        createdById: currentUser.id,
       },
     });
     await this.logsService.createOperationLog({
       action: "certificates.template.create",
       targetType: "CertificateTemplate",
       targetId: template.id,
-      operatorId: userId,
+      operatorId: currentUser.id,
       detail: { name: dto.name, type: dto.type },
     });
     return template;
   }
 
-  findAllTemplates() {
+  findAllTemplates(currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     return this.prisma.certificateTemplate.findMany({
       orderBy: { createdAt: "desc" },
     });
   }
 
-  findTemplateById(id: string) {
+  findTemplateById(id: string, currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     return this.prisma.certificateTemplate.findUnique({ where: { id } });
   }
 
-  async generate(dto: GenerateCertificateDto, userId?: string) {
+  async generate(dto: GenerateCertificateDto, currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     const template = await this.prisma.certificateTemplate.findUnique({
       where: { id: dto.templateId },
     });
@@ -51,55 +61,31 @@ export class CertificatesService {
     });
     if (!student) throw new NotFoundException("学生不存在");
 
-    const certNo = await this.generateCertNo(template.type);
-    let content = template.content;
-    content = content.replace(/\{\{studentName\}\}/g, student.name);
-    content = content.replace(/\{\{studentNo\}\}/g, student.studentNo);
-    content = content.replace(/\{\{grade\}\}/g, student.grade);
-    content = content.replace(/\{\{major\}\}/g, student.major);
-    content = content.replace(/\{\{className\}\}/g, student.className);
-    content = content.replace(/\{\{certNo\}\}/g, certNo);
-    content = content.replace(/\{\{date\}\}/g, new Date().toLocaleDateString("zh-CN"));
-
-    if (dto.fieldValues) {
-      for (const [key, value] of Object.entries(dto.fieldValues)) {
-        content = content.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
-      }
-    }
-
-    const cert = await this.prisma.certificate.create({
-      data: {
-        certNo,
-        templateId: template.id,
-        studentId: student.id,
-        studentName: student.name,
-        studentNo: student.studentNo,
-        title: template.name,
-        content,
-        fieldValues: dto.fieldValues ?? {},
-        issuedById: userId,
-      },
-    });
+    const cert = await this.createCertificateWithRetry(template, student, dto, currentUser.id);
 
     await this.logsService.createOperationLog({
       action: "certificates.generate",
       targetType: "Certificate",
       targetId: cert.id,
-      operatorId: userId,
-      detail: { certNo, studentName: student.name, template: template.name },
+      operatorId: currentUser.id,
+      detail: { certNo: cert.certNo, studentName: student.name, template: template.name },
     });
 
     return cert;
   }
 
-  findAll() {
+  findAll(currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     return this.prisma.certificate.findMany({
       include: { template: true },
       orderBy: { createdAt: "desc" },
     });
   }
 
-  findByStudent(studentId: string) {
+  async findByStudent(studentId: string, currentUser: AuthUser) {
+    await this.assertCanViewStudentCertificates(studentId, currentUser);
+
     return this.prisma.certificate.findMany({
       where: { studentId },
       include: { template: true },
@@ -107,16 +93,19 @@ export class CertificatesService {
     });
   }
 
-  async findById(id: string) {
+  async findById(id: string, currentUser: AuthUser) {
     const cert = await this.prisma.certificate.findUnique({
       where: { id },
       include: { template: true },
     });
     if (!cert) throw new NotFoundException("证明不存在");
+    await this.assertCanViewStudentCertificates(cert.studentId, currentUser);
     return cert;
   }
 
-  async revoke(id: string, userId?: string) {
+  async revoke(id: string, currentUser: AuthUser) {
+    this.assertCanManageCertificates(currentUser);
+
     const cert = await this.prisma.certificate.update({
       where: { id },
       data: { status: "REVOKED" },
@@ -125,10 +114,124 @@ export class CertificatesService {
       action: "certificates.revoke",
       targetType: "Certificate",
       targetId: cert.id,
-      operatorId: userId,
+      operatorId: currentUser.id,
       detail: { certNo: cert.certNo },
     });
     return cert;
+  }
+
+  private async createCertificateWithRetry(
+    template: { id: string; name: string; type: string; content: string },
+    student: {
+      id: string;
+      name: string;
+      studentNo: string;
+      grade: string;
+      major: string;
+      className: string;
+    },
+    dto: GenerateCertificateDto,
+    userId: string
+  ) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const certNo = await this.generateCertNo(template.type);
+      const content = this.renderContent(template.content, student, certNo, dto.fieldValues);
+
+      try {
+        return await this.prisma.certificate.create({
+          data: {
+            certNo,
+            templateId: template.id,
+            studentId: student.id,
+            studentName: student.name,
+            studentNo: student.studentNo,
+            title: template.name,
+            content,
+            fieldValues: dto.fieldValues ?? {},
+            issuedById: userId,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002" &&
+          attempt < 4
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error("证明编号生成失败，请稍后重试。");
+  }
+
+  private renderContent(
+    templateContent: string,
+    student: {
+      name: string;
+      studentNo: string;
+      grade: string;
+      major: string;
+      className: string;
+    },
+    certNo: string,
+    fieldValues: Record<string, string> | undefined
+  ): string {
+    let content = templateContent;
+    const builtinValues: Record<string, string> = {
+      studentName: student.name,
+      studentNo: student.studentNo,
+      grade: student.grade,
+      major: student.major,
+      className: student.className,
+      certNo,
+      date: new Date().toLocaleDateString("zh-CN")
+    };
+
+    for (const [key, value] of Object.entries({ ...builtinValues, ...(fieldValues ?? {}) })) {
+      content = content.replace(
+        new RegExp(`\\{\\{${this.escapeRegExp(key)}\\}\\}`, "g"),
+        String(value)
+      );
+    }
+
+    return content;
+  }
+
+  private async assertCanViewStudentCertificates(studentId: string, currentUser: AuthUser) {
+    if (this.canManageCertificates(currentUser)) {
+      return;
+    }
+
+    const student = await this.prisma.student.findFirst({
+      where: {
+        id: studentId,
+        userId: currentUser.id
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!student) {
+      throw new ForbiddenException("无权查看该学生的电子证明。");
+    }
+  }
+
+  private assertCanManageCertificates(currentUser: AuthUser) {
+    if (!this.canManageCertificates(currentUser)) {
+      throw new ForbiddenException("仅管理员或教师可以维护电子证明。");
+    }
+  }
+
+  private canManageCertificates(currentUser: AuthUser): boolean {
+    const allowedRoles = new Set(["admin", "teacher"]);
+    return currentUser.roles.some((role) => allowedRoles.has(role));
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   private async generateCertNo(type: string): Promise<string> {

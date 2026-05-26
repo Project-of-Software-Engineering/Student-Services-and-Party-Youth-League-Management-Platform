@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
-import { Prisma, StudentStatus } from "@prisma/client";
+import { Prisma, ProfileChangeStatus, Student, StudentProfileChangeRequest, StudentStatus } from "@prisma/client";
 import * as ExcelJS from "exceljs";
 import readXlsxFile from "read-excel-file/node";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -8,6 +8,10 @@ import { AuthUser } from "../auth/interfaces/auth-user.interface";
 import { UploadedFilePayload } from "../files/files.service";
 import { ImportStudentsDto } from "./dto/import-students.dto";
 import { ImportStudentRowDto } from "./dto/import-student-row.dto";
+import {
+  ReviewProfileChangeRequestDto,
+  SubmitProfileChangeRequestDto
+} from "./dto/profile-change-request.dto";
 import { StudentProfileResponseDto } from "./dto/student-profile-response.dto";
 import { StudentResponseDto } from "./dto/student-response.dto";
 
@@ -76,6 +80,10 @@ const STUDENT_TEMPLATE_SAMPLE = [
   "志愿服务周"
 ] as const;
 
+type ProfileChangeRequestWithStudent = StudentProfileChangeRequest & {
+  student: Student;
+};
+
 @Injectable()
 export class StudentsService {
   constructor(
@@ -112,7 +120,7 @@ export class StudentsService {
     }));
   }
 
-  async findOne(id: string): Promise<StudentResponseDto | null> {
+  async findOne(id: string, currentUser: AuthUser): Promise<StudentResponseDto | null> {
     const student = await this.prisma.student.findUnique({
       where: {
         id
@@ -122,6 +130,7 @@ export class StudentsService {
     if (!student) {
       return null;
     }
+    this.assertCanViewStudent(student.userId, currentUser);
 
     return {
       id: student.id,
@@ -158,15 +167,25 @@ export class StudentsService {
     };
   }
 
-  async findProfile(id: string): Promise<StudentProfileResponseDto | null> {
+  async findProfile(id: string, currentUser?: AuthUser): Promise<StudentProfileResponseDto | null> {
     const profile = await this.prisma.studentProfile.findUnique({
       where: {
         studentId: id
+      },
+      include: {
+        student: {
+          select: {
+            userId: true
+          }
+        }
       }
     });
 
     if (!profile) {
       return null;
+    }
+    if (currentUser) {
+      this.assertCanViewStudent(profile.student.userId, currentUser);
     }
 
     return {
@@ -403,6 +422,185 @@ export class StudentsService {
     return this.writeWorkbook(workbook);
   }
 
+  async submitProfileChangeRequest(
+    dto: SubmitProfileChangeRequestDto,
+    currentUser: AuthUser
+  ) {
+    const student = await this.prisma.student.findUnique({
+      where: {
+        userId: currentUser.id
+      },
+      select: {
+        id: true,
+        name: true,
+        studentNo: true
+      }
+    });
+
+    if (!student) {
+      throw new ForbiddenException("当前账号未绑定学生档案，无法提交画像变更申请。");
+    }
+
+    const pendingCount = await this.prisma.studentProfileChangeRequest.count({
+      where: {
+        studentId: student.id,
+        status: ProfileChangeStatus.PENDING
+      }
+    });
+
+    if (pendingCount > 0) {
+      throw new BadRequestException("已有待审核的画像变更申请，请等待审核后再提交。");
+    }
+
+    const requestedData = this.buildProfileChangeData(dto);
+    if (Object.keys(requestedData).length === 0) {
+      throw new BadRequestException("请至少填写一项画像变更内容。");
+    }
+
+    const request = await this.prisma.studentProfileChangeRequest.create({
+      data: {
+        studentId: student.id,
+        requestedData: requestedData as Prisma.InputJsonObject
+      },
+      include: {
+        student: true
+      }
+    });
+
+    await this.logsService.createOperationLog({
+      action: "students.profile_change.submit",
+      targetType: "StudentProfileChangeRequest",
+      targetId: request.id,
+      operatorId: currentUser.id,
+      detail: {
+        studentName: student.name,
+        studentNo: student.studentNo,
+        fields: Object.keys(requestedData)
+      }
+    });
+
+    return this.toProfileChangeResponse(request);
+  }
+
+  async findMyProfileChangeRequests(currentUser: AuthUser) {
+    const student = await this.prisma.student.findUnique({
+      where: {
+        userId: currentUser.id
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!student) {
+      return [];
+    }
+
+    const requests = await this.prisma.studentProfileChangeRequest.findMany({
+      where: {
+        studentId: student.id
+      },
+      include: {
+        student: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 10
+    });
+
+    return requests.map((request) => this.toProfileChangeResponse(request));
+  }
+
+  async findProfileChangeRequests(currentUser: AuthUser) {
+    this.assertCanManageStudents(currentUser);
+
+    const requests = await this.prisma.studentProfileChangeRequest.findMany({
+      include: {
+        student: true
+      },
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      take: 50
+    });
+
+    return requests.map((request) => this.toProfileChangeResponse(request));
+  }
+
+  async reviewProfileChangeRequest(
+    id: string,
+    status: ProfileChangeStatus,
+    dto: ReviewProfileChangeRequestDto,
+    currentUser: AuthUser
+  ) {
+    this.assertCanManageStudents(currentUser);
+
+    const request = await this.prisma.studentProfileChangeRequest.findUnique({
+      where: {
+        id
+      },
+      include: {
+        student: true
+      }
+    });
+
+    if (!request) {
+      throw new BadRequestException("画像变更申请不存在。");
+    }
+    if (request.status !== ProfileChangeStatus.PENDING) {
+      throw new BadRequestException("该画像变更申请已审核。");
+    }
+
+    const reviewedAt = new Date();
+    const updatedRequest = await this.prisma.$transaction(async (tx) => {
+      if (status === ProfileChangeStatus.APPROVED) {
+        const requestedData = request.requestedData as Prisma.JsonObject;
+        await tx.studentProfile.upsert({
+          where: {
+            studentId: request.studentId
+          },
+          create: {
+            studentId: request.studentId,
+            ...this.buildProfileMutationData(requestedData)
+          },
+          update: this.buildProfileMutationData(requestedData)
+        });
+      }
+
+      return tx.studentProfileChangeRequest.update({
+        where: {
+          id
+        },
+        data: {
+          status,
+          reviewComment: dto.comment ?? null,
+          reviewedById: currentUser.id,
+          reviewedAt
+        },
+        include: {
+          student: true
+        }
+      });
+    });
+
+    await this.logsService.createOperationLog({
+      action:
+        status === ProfileChangeStatus.APPROVED
+          ? "students.profile_change.approve"
+          : "students.profile_change.reject",
+      targetType: "StudentProfileChangeRequest",
+      targetId: updatedRequest.id,
+      operatorId: currentUser.id,
+      detail: {
+        studentName: updatedRequest.student.name,
+        studentNo: updatedRequest.student.studentNo,
+        status,
+        comment: dto.comment ?? null
+      }
+    });
+
+    return this.toProfileChangeResponse(updatedRequest);
+  }
+
   private async parseExcelRows(buffer: Buffer): Promise<ImportStudentRowDto[]> {
     let sheetRows: unknown[][];
     try {
@@ -548,10 +746,22 @@ export class StudentsService {
   }
 
   private assertCanManageStudents(currentUser: AuthUser) {
-    const allowedRoles = new Set(["admin", "teacher"]);
-    if (!currentUser.roles.some((role) => allowedRoles.has(role))) {
+    if (!this.canManageStudents(currentUser)) {
       throw new ForbiddenException("仅管理员或教师可以维护学生数据。");
     }
+  }
+
+  private assertCanViewStudent(studentUserId: string | null, currentUser: AuthUser) {
+    if (this.canManageStudents(currentUser) || studentUserId === currentUser.id) {
+      return;
+    }
+
+    throw new ForbiddenException("无权查看该学生档案。");
+  }
+
+  private canManageStudents(currentUser: AuthUser): boolean {
+    const allowedRoles = new Set(["admin", "teacher"]);
+    return currentUser.roles.some((role) => allowedRoles.has(role));
   }
 
   private buildStudentUpsertData(row: ImportStudentRowDto) {
@@ -593,6 +803,59 @@ export class StudentsService {
       ...(row.practices ? { practices: row.practices as Prisma.InputJsonValue } : {}),
       ...(row.tags ? { tags: row.tags } : {}),
       ...(row.bio !== undefined ? { bio: row.bio } : {})
+    };
+  }
+
+  private buildProfileChangeData(dto: SubmitProfileChangeRequestDto): Prisma.JsonObject {
+    return {
+      ...(dto.bio !== undefined ? { bio: dto.bio.trim() } : {}),
+      ...(dto.tags ? { tags: this.normalizeStringArray(dto.tags) } : {}),
+      ...(dto.honors ? { honors: dto.honors as Prisma.JsonArray } : {}),
+      ...(dto.competitions ? { competitions: dto.competitions as Prisma.JsonArray } : {}),
+      ...(dto.practices ? { practices: dto.practices as Prisma.JsonArray } : {})
+    };
+  }
+
+  private buildProfileMutationData(data: Prisma.JsonObject) {
+    return {
+      ...(typeof data.bio === "string" ? { bio: data.bio } : {}),
+      ...(Array.isArray(data.tags) ? { tags: this.normalizeStringArray(data.tags) } : {}),
+      ...(Array.isArray(data.honors) ? { honors: data.honors as Prisma.InputJsonArray } : {}),
+      ...(Array.isArray(data.competitions)
+        ? { competitions: data.competitions as Prisma.InputJsonArray }
+        : {}),
+      ...(Array.isArray(data.practices) ? { practices: data.practices as Prisma.InputJsonArray } : {})
+    };
+  }
+
+  private normalizeStringArray(values: unknown[]): string[] {
+    return [
+      ...new Set(
+        values
+          .map((value) => String(value).trim())
+          .filter(Boolean)
+      )
+    ];
+  }
+
+  private toProfileChangeResponse(request: ProfileChangeRequestWithStudent) {
+    return {
+      id: request.id,
+      student: {
+        id: request.student.id,
+        studentNo: request.student.studentNo,
+        name: request.student.name,
+        grade: request.student.grade,
+        major: request.student.major,
+        className: request.student.className
+      },
+      requestedData: request.requestedData,
+      status: request.status,
+      reviewComment: request.reviewComment,
+      reviewedById: request.reviewedById,
+      reviewedAt: request.reviewedAt?.toISOString() ?? null,
+      createdAt: request.createdAt.toISOString(),
+      updatedAt: request.updatedAt.toISOString()
     };
   }
 

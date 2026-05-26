@@ -60,7 +60,9 @@ export class NoticesService {
     }));
   }
 
-  async findPublished(limit = 20): Promise<NoticeResponseDto[]> {
+  async findPublished(limit = 20, currentUser: AuthUser): Promise<NoticeResponseDto[]> {
+    this.assertCanPublish(currentUser);
+
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
     const notices = await this.prisma.notice.findMany({
       include: {

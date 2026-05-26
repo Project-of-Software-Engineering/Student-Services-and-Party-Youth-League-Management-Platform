@@ -7,14 +7,19 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { PolicyStatus } from "@prisma/client";
+import { Response } from "express";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { Roles } from "../auth/decorators/roles.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../auth/guards/roles.guard";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
@@ -29,8 +34,8 @@ const policyFileUploadOptions = {
   limits: {
     fileSize: MAX_UPLOAD_FILE_SIZE_BYTES,
     files: 1,
-    fields: 4,
-    fieldSize: 512
+    fields: 5,
+    fieldSize: 12000
   },
   fileFilter: (
     _request: unknown,
@@ -46,7 +51,7 @@ const policyFileUploadOptions = {
   }
 };
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("policies")
 export class PoliciesController {
   constructor(private readonly policiesService: PoliciesService) {}
@@ -70,12 +75,29 @@ export class PoliciesController {
     return this.policiesService.answerQuestion(question ?? "");
   }
 
+  @Get("export")
+  @Roles("admin", "teacher", "leader")
+  async exportPolicies(
+    @CurrentUser() currentUser: AuthUser,
+    @Res({ passthrough: true }) response: Response
+  ): Promise<StreamableFile> {
+    const file = await this.policiesService.exportPolicies(currentUser);
+    response.set({
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Length": file.length,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent("policies-export.xlsx")}`
+    });
+    return new StreamableFile(file);
+  }
+
   @Post()
+  @Roles("admin", "teacher", "leader")
   create(@Body() dto: CreatePolicyDocDto, @CurrentUser() currentUser: AuthUser) {
     return this.policiesService.create(dto, currentUser);
   }
 
   @Post("upload")
+  @Roles("admin", "teacher", "leader")
   @UseInterceptors(FileInterceptor("file", policyFileUploadOptions))
   uploadPolicyFile(
     @UploadedFile() file: UploadedFilePayload,
@@ -86,6 +108,7 @@ export class PoliciesController {
   }
 
   @Patch(":id")
+  @Roles("admin", "teacher", "leader")
   update(
     @Param("id") id: string,
     @Body() dto: UpdatePolicyDocDto,
@@ -95,11 +118,13 @@ export class PoliciesController {
   }
 
   @Post(":id/activate")
+  @Roles("admin", "teacher", "leader")
   activate(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
     return this.policiesService.setStatus(id, PolicyStatus.ACTIVE, currentUser);
   }
 
   @Post(":id/deactivate")
+  @Roles("admin", "teacher", "leader")
   deactivate(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
     return this.policiesService.setStatus(id, PolicyStatus.INACTIVE, currentUser);
   }

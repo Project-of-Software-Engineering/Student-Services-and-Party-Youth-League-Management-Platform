@@ -6,7 +6,8 @@ const defaultRouteByRole: Record<RoleName, string> = {
   student: "/student",
   teacher: "/admin",
   admin: "/admin",
-  leader: "/leader"
+  leader: "/leader",
+  league_secretary: "/admin/organizations"
 };
 
 function getDefaultRoute(roles: RoleName[] = []) {
@@ -18,6 +19,9 @@ function getDefaultRoute(roles: RoleName[] = []) {
   }
   if (roles.includes("teacher")) {
     return defaultRouteByRole.teacher;
+  }
+  if (roles.includes("league_secretary")) {
+    return defaultRouteByRole.league_secretary;
   }
   if (roles.includes("admin")) {
     return defaultRouteByRole.admin;
@@ -49,6 +53,62 @@ const router = createRouter({
     {
       path: "/admin",
       name: "admin",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/students",
+      name: "admin-students",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/policies",
+      name: "admin-policies",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/notices",
+      name: "admin-notices",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/certificates",
+      name: "admin-certificates",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/logs",
+      name: "admin-logs",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
+      path: "/admin/organizations",
+      name: "admin-organizations",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin", "league_secretary"]
+      }
+    },
+    {
+      path: "/admin/templates",
+      name: "admin-templates",
       component: () => import("@/pages/AdminDashboardPage.vue"),
       meta: {
         roles: ["teacher", "admin"]
