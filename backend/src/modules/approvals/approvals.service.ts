@@ -276,7 +276,7 @@ export class ApprovalsService {
         noticeRead: noticeReadCount
       },
       typeDistribution: typeGroups.map((item) => ({
-        type: item.type,
+        type: this.normalizeDisplayText(item.type),
         count: item._count._all
       })),
       recent,
@@ -315,12 +315,12 @@ export class ApprovalsService {
       approval.id,
       approval.student.name,
       approval.student.studentNo,
-      approval.type,
+      this.normalizeDisplayText(approval.type),
       approval.status,
       this.getCurrentStepLabel(approval),
       approval.submittedAt?.toISOString() ?? "",
       approval.finishedAt?.toISOString() ?? "",
-      approval.reason
+      this.normalizeDisplayText(approval.reason)
     ]);
 
     return `\ufeff${[header, ...rows].map((row) => row.map(this.escapeCsv).join(",")).join("\n")}`;
@@ -499,8 +499,8 @@ export class ApprovalsService {
   private toResponse(approval: ApprovalWithRelations): ApprovalResponseDto {
     return {
       id: approval.id,
-      type: approval.type,
-      reason: approval.reason,
+      type: this.normalizeDisplayText(approval.type),
+      reason: this.normalizeDisplayText(approval.reason),
       status: approval.status,
       currentStep: approval.currentStep,
       submittedAt: approval.submittedAt?.toISOString() ?? null,
@@ -535,7 +535,7 @@ export class ApprovalsService {
         id: attachment.id,
         ownerType: attachment.ownerType,
         ownerId: attachment.ownerId,
-        fileName: attachment.fileName,
+        fileName: this.normalizeDisplayText(attachment.fileName),
         mimeType: attachment.mimeType,
         fileSize: attachment.fileSize,
         uploadedBy: attachment.uploadedBy,
@@ -768,9 +768,9 @@ export class ApprovalsService {
 
     const resultLabel = this.getDecisionNoticeLabel(decision);
     await this.noticesService.createSystemNotice({
-      title: `审批结果通知：${approval.type}`,
+      title: `审批结果通知：${this.normalizeDisplayText(approval.type)}`,
       content: [
-        `你的“${approval.type}”审批已${resultLabel}。`,
+        `你的“${this.normalizeDisplayText(approval.type)}”审批已${resultLabel}。`,
         `当前处理节点：第 ${stepNo} 节点。`,
         comment ? `处理意见：${comment}` : "处理意见：无。"
       ].join("\n"),
@@ -801,5 +801,30 @@ export class ApprovalsService {
   private escapeCsv(value: unknown): string {
     const text = value === null || value === undefined ? "" : String(value);
     return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  private normalizeDisplayText(value: string): string {
+    return this.repairQuestionMarkMojibake(this.decodeLatin1Mojibake(value));
+  }
+
+  private decodeLatin1Mojibake(value: string): string {
+    if (!/[ÃÂåæçéèäöüï]/.test(value)) {
+      return value;
+    }
+
+    const decoded = Buffer.from(value, "latin1").toString("utf8");
+    return this.countReplacementChars(decoded) <= this.countReplacementChars(value) ? decoded : value;
+  }
+
+  private repairQuestionMarkMojibake(value: string): string {
+    if (!/[�]{2,}|[?]{2,}/.test(value)) {
+      return value;
+    }
+
+    return value.replace(/[�]{2,}/g, "（历史乱码）").replace(/[?]{2,}/g, "（历史乱码）");
+  }
+
+  private countReplacementChars(value: string): number {
+    return (value.match(/�/g) ?? []).length;
   }
 }

@@ -127,7 +127,7 @@ const router = createRouter({
       name: "leader",
       component: () => import("@/pages/LeaderDashboardPage.vue"),
       meta: {
-        roles: ["leader", "admin"]
+        roles: ["leader"]
       }
     }
   ]
