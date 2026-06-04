@@ -78,6 +78,7 @@ const approvalsQuery = useQuery({
 const approvals = computed<ApprovalItem[]>(() => approvalsQuery.data.value ?? []);
 const counts = computed(() => summaryQuery.data.value?.counts ?? {});
 const firstApprovalId = computed(() => approvals.value[0]?.id ?? "");
+const canFinalReview = computed(() => Boolean(session.user?.roles.includes("leader")));
 
 const summaryCards = computed(() => [
   { title: "审批总数", value: counts.value.total ?? 0, desc: "平台当前可见审批单总量" },
@@ -346,6 +347,9 @@ function normalizeError(error: unknown, fallback: string) {
         </article>
 
         <p v-if="!approvals.length" class="empty-line">暂无审批数据。</p>
+        <p v-if="!canFinalReview" class="status-line error">
+          当前账号可查看领导端数据；终审处理请退出后使用领导账号 demo.leader 登录。
+        </p>
         <p v-if="downloadError" class="status-line error">{{ downloadError }}</p>
       </div>
 
