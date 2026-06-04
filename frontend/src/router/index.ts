@@ -67,6 +67,14 @@ const router = createRouter({
       }
     },
     {
+      path: "/admin/approvals",
+      name: "admin-approvals",
+      component: () => import("@/pages/AdminDashboardPage.vue"),
+      meta: {
+        roles: ["teacher", "admin"]
+      }
+    },
+    {
       path: "/admin/policies",
       name: "admin-policies",
       component: () => import("@/pages/AdminDashboardPage.vue"),

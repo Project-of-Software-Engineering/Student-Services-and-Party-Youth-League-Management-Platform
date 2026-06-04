@@ -28,6 +28,49 @@ interface PolicyDoc {
   updatedAt: string;
 }
 
+type DecisionAction = "approve" | "reject" | "return";
+
+interface ApprovalFile {
+  id: string;
+  fileName: string;
+  fileSize: number;
+}
+
+interface ApprovalStep {
+  id: string;
+  stepNo: number;
+  roleCode: string;
+  decision: string;
+}
+
+interface ApprovalItem {
+  id: string;
+  type: string;
+  reason: string;
+  status: string;
+  currentStep: number;
+  submittedAt: string | null;
+  updatedAt: string;
+  student: {
+    name: string;
+    studentNo: string;
+    className: string;
+  };
+  steps: ApprovalStep[];
+  attachments: ApprovalFile[];
+}
+
+interface CertificateItem {
+  id: string;
+  certNo: string;
+  title: string;
+  content: string;
+  studentName: string;
+  studentNo: string;
+  status: string;
+  issuedAt: string;
+}
+
 const session = useSessionStore();
 session.hydrate();
 const queryClient = useQueryClient();
@@ -42,6 +85,7 @@ const canViewAdminAudit = computed(() =>
 const adminSections = [
   { key: "overview", to: "/admin", label: "总览" },
   { key: "students", to: "/admin/students", label: "学生导入" },
+  { key: "approvals", to: "/admin/approvals", label: "审批处理" },
   { key: "organizations", to: "/admin/organizations", label: "组织维护" },
   { key: "policies", to: "/admin/policies", label: "政策维护" },
   { key: "notices", to: "/admin/notices", label: "通知发布" },
@@ -106,6 +150,12 @@ const logsQuery = useQuery({
   enabled: computed(() => session.isAuthed && canViewAdminAudit.value)
 });
 
+const adminApprovalsQuery = useQuery({
+  queryKey: ["approvals", "admin-review"],
+  queryFn: async (): Promise<ApprovalItem[]> => (await http.get("/approvals", { params: { limit: 50 } })).data,
+  enabled: computed(() => session.isAuthed && canUseCoreAdmin.value)
+});
+
 const policiesQuery = useQuery({
   queryKey: ["policies"],
   queryFn: async (): Promise<PolicyDoc[]> =>
@@ -154,6 +204,8 @@ const certGenerateForm = ref({
   templateId: "",
   studentId: "",
 });
+
+const approvalDecisionComment = ref("同意按流程推进。");
 
 const certTemplateMutation = useMutation({
   mutationFn: async () => {
@@ -311,8 +363,27 @@ const profileChangeReviewMutation = useMutation({
   }
 });
 
+const approvalDecisionMutation = useMutation({
+  mutationFn: async ({ id, action }: { id: string; action: DecisionAction }) =>
+    (
+      await http.post(`/approvals/${id}/${action}`, {
+        comment: approvalDecisionComment.value
+      })
+    ).data,
+  onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["approvals", "admin-review"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
 const profileChangeReviewErrorMessage = computed(() =>
   normalizeError(profileChangeReviewMutation.error.value, "画像审核操作失败。")
+);
+
+const approvalDecisionErrorMessage = computed(() =>
+  normalizeError(approvalDecisionMutation.error.value, "审批处理失败。")
 );
 
 const pendingProfileChangeCount = computed(
@@ -322,6 +393,11 @@ const pendingProfileChangeCount = computed(
     ).length
 );
 
+const reviewableApprovals = computed(() =>
+  (adminApprovalsQuery.data.value ?? []).filter((approval) => Boolean(getCurrentApprovalStep(approval)))
+);
+
+const pendingApprovalCount = computed(() => reviewableApprovals.value.length);
 
 const excelImportMutation = useMutation({
   mutationFn: async () => {
@@ -629,6 +705,36 @@ const channelLabels: Record<string, string> = {
   WECHAT: "微信通知"
 };
 
+const approvalStatusLabels: Record<string, string> = {
+  DRAFT: "草稿",
+  SUBMITTED: "已提交",
+  IN_REVIEW: "审核中",
+  APPROVED: "已通过",
+  REJECTED: "已驳回",
+  RETURNED: "退回补充"
+};
+
+const approvalDecisionLabels: Record<string, string> = {
+  PENDING: "待处理",
+  APPROVED: "已通过",
+  REJECTED: "已驳回",
+  RETURNED: "已退回"
+};
+
+const approvalRoleLabels: Record<string, string> = {
+  teacher: "辅导员初审",
+  admin: "学院复核",
+  leader: "领导终审"
+};
+
+const approvalActionLabels: Record<DecisionAction, string> = {
+  approve: "通过",
+  return: "退回",
+  reject: "驳回"
+};
+
+const approvalActions: DecisionAction[] = ["approve", "return", "reject"];
+
 const logActionLabels: Record<string, string> = {
   "students.import": "学生导入",
   "students.template.download": "下载学生导入模板",
@@ -893,6 +999,60 @@ function getPolicyStatusLabel(status: string) {
   return status === "INACTIVE" ? "已停用" : "启用中";
 }
 
+function getCurrentApprovalStep(approval: ApprovalItem) {
+  const step = approval.steps.find((item) => item.stepNo === approval.currentStep + 1) ?? null;
+  if (!step || !["SUBMITTED", "IN_REVIEW"].includes(approval.status)) {
+    return null;
+  }
+
+  const roles = (session.user?.roles ?? []) as string[];
+  return roles.includes(step.roleCode) && ["teacher", "admin"].includes(step.roleCode)
+    ? step
+    : null;
+}
+
+function decideApproval(id: string, action: DecisionAction) {
+  approvalDecisionMutation.mutate({ id, action });
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "未提交";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function downloadCertificate(cert: CertificateItem) {
+  const contentHtml = escapeHtml(cert.content).replace(/\r?\n/g, "<br>");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(cert.title)}</title><style>body{font-family:"SimSun",serif;max-width:700px;margin:60px auto;padding:40px;border:2px solid #8b0000;}h1{text-align:center;color:#8b0000;}.cert-no{text-align:right;color:#666;font-size:13px;}.content{line-height:2;margin:30px 0;font-size:16px;}.footer{text-align:right;margin-top:50px;}.seal{color:#8b0000;font-weight:bold;font-size:18px;}</style></head><body><p class="cert-no">编号：${escapeHtml(cert.certNo)}</p><h1>${escapeHtml(cert.title)}</h1><div class="content">${contentHtml}</div><div class="footer"><p class="seal">学院学生综合服务与党团管理平台</p><p>${new Date(cert.issuedAt).toLocaleDateString("zh-CN")}</p></div></body></html>`;
+  downloadBlob(html, `${cert.title}-${cert.certNo}.html`);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function parseCommaList(value: string) {
   return value
     .split(",")
@@ -953,6 +1113,68 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
         {{ section.label }}
       </RouterLink>
     </nav>
+
+    <section v-if="isAdminSection('approvals')" class="import-panel">
+      <div class="panel-heading">
+        <div>
+          <strong>审批处理</strong>
+          <span>教师处理辅导员初审，管理员处理学院复核；领导终审保留在领导端。</span>
+        </div>
+        <span class="policy-status">待处理 {{ pendingApprovalCount }}</span>
+      </div>
+
+      <label class="field">
+        <span>处理意见</span>
+        <textarea v-model="approvalDecisionComment" rows="4" />
+      </label>
+
+      <p v-if="approvalDecisionMutation.data.value" class="status-line success">
+        已更新《{{ approvalDecisionMutation.data.value.type }}》审批状态。
+      </p>
+      <p v-if="approvalDecisionErrorMessage" class="status-line error">{{ approvalDecisionErrorMessage }}</p>
+
+      <article v-for="approval in reviewableApprovals" :key="approval.id" class="module-card compact-card">
+        <div class="policy-card-heading">
+          <strong>{{ approval.type }}</strong>
+          <span class="policy-status">{{ approvalStatusLabels[approval.status] ?? approval.status }}</span>
+        </div>
+        <span>{{ approval.student.name }} | {{ approval.student.studentNo }} | {{ approval.student.className }}</span>
+        <span>{{ approval.reason }}</span>
+        <div class="action-row">
+          <span
+            v-for="step in approval.steps"
+            :key="step.id"
+            class="step-chip"
+            :data-decision="step.decision"
+          >
+            {{ approvalRoleLabels[step.roleCode] ?? step.roleCode }} · {{ approvalDecisionLabels[step.decision] ?? step.decision }}
+          </span>
+        </div>
+        <span>
+          当前节点：{{ approvalRoleLabels[getCurrentApprovalStep(approval)?.roleCode ?? ""] ?? "无可处理节点" }} |
+          提交时间：{{ formatDate(approval.submittedAt) }} |
+          更新时间：{{ formatDate(approval.updatedAt) }}
+        </span>
+        <span v-if="approval.attachments.length">
+          附件：{{ approval.attachments.map((file) => `${file.fileName}（${formatFileSize(file.fileSize)}）`).join("、") }}
+        </span>
+        <div class="action-row">
+          <button
+            v-for="action in approvalActions"
+            :key="action"
+            type="button"
+            class="primary-button"
+            :data-action="action"
+            :disabled="approvalDecisionMutation.isPending.value"
+            @click="decideApproval(approval.id, action)"
+          >
+            {{ approvalActionLabels[action] }}
+          </button>
+        </div>
+      </article>
+
+      <p v-if="!reviewableApprovals.length" class="status-line">当前账号暂无可处理审批。</p>
+    </section>
 
     <section v-if="isAdminSection('students')" class="import-panel">
       <div class="panel-heading">
@@ -1508,7 +1730,10 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
             <span :class="['policy-status', cert.status === 'REVOKED' ? 'is-muted' : '']">{{ cert.status === "REVOKED" ? "已撤销" : "有效" }}</span>
           </div>
           <span>编号：{{ cert.certNo }} | {{ new Date(cert.issuedAt).toLocaleDateString("zh-CN") }}</span>
-          <button v-if="cert.status !== 'REVOKED'" type="button" class="secondary-button" @click="certRevokeM.mutate(cert.id)">撤销</button>
+          <div class="action-row">
+            <button type="button" class="secondary-button" @click="downloadCertificate(cert)">下载证明</button>
+            <button v-if="cert.status !== 'REVOKED'" type="button" class="secondary-button" @click="certRevokeM.mutate(cert.id)">撤销</button>
+          </div>
         </article>
       </section>
     </section>
@@ -1759,6 +1984,25 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
   color: var(--ruc-muted);
 }
 
+.step-chip {
+  padding: 8px 10px;
+  border: 1px solid var(--ruc-line);
+  background: #fffdf8;
+  color: var(--ruc-muted);
+  font-size: 13px;
+}
+
+.step-chip[data-decision="APPROVED"] {
+  border-color: rgba(29, 104, 65, 0.28);
+  color: #1d6841;
+}
+
+.step-chip[data-decision="RETURNED"],
+.step-chip[data-decision="REJECTED"] {
+  border-color: rgba(141, 77, 29, 0.35);
+  color: #8d4d1d;
+}
+
 .primary-button {
   border: none;
   padding: 12px 18px;
@@ -1767,6 +2011,14 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+.primary-button[data-action="return"] {
+  background: #8d4d1d;
+}
+
+.primary-button[data-action="reject"] {
+  background: #660000;
 }
 
 .secondary-button {
