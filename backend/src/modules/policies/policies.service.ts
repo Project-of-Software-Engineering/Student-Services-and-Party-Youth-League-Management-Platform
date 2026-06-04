@@ -40,7 +40,7 @@ export class PoliciesService {
 
     const docs = await this.prisma.policyDoc.findMany({
       where,
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }]
+      orderBy: [{ createdAt: "desc" }]
     });
 
     return docs.map((doc) => this.toResponse(doc));
@@ -125,6 +125,43 @@ export class PoliciesService {
         category: doc.category,
         version: doc.version,
         hasContentText: Boolean(doc.contentText)
+      }
+    });
+
+    return this.toResponse(doc);
+  }
+
+  async remove(id: string, currentUser: AuthUser): Promise<PolicyDocResponseDto> {
+    this.assertCanManagePolicies(currentUser);
+
+    const existing = await this.prisma.policyDoc.findUnique({
+      where: {
+        id
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("政策文档不存在。");
+    }
+
+    const doc = await this.prisma.policyDoc.delete({
+      where: {
+        id
+      }
+    });
+
+    await this.filesService.removeStoredAttachment(doc.sourceFileKey);
+
+    await this.logsService.createOperationLog({
+      action: "policies.delete",
+      targetType: "PolicyDoc",
+      targetId: doc.id,
+      operatorId: currentUser.id,
+      detail: {
+        title: doc.title,
+        category: doc.category,
+        version: doc.version,
+        sourceFileName: doc.sourceFileName
       }
     });
 
@@ -217,6 +254,15 @@ export class PoliciesService {
         sourceFileName: dto.sourceFileName?.trim() || uploaded.fileName,
         contentText: this.normalizeContentText(dto.contentText) ?? this.extractTextFromUpload(file),
         createdById: currentUser.id
+      }
+    });
+
+    await this.prisma.attachment.update({
+      where: {
+        id: uploaded.id
+      },
+      data: {
+        ownerId: doc.id
       }
     });
 

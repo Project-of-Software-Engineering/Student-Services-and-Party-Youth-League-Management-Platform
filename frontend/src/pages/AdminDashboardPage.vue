@@ -192,20 +192,25 @@ const modules = [
   "操作日志"
 ];
 
-const branchForm = ref({
-  name: "2023级软件工程 SE-1 班团支部",
-  grade: "2023",
-  major: "软件工程",
-  className: "SE-1",
-  secretaryName: "班团骨干",
-  contact: "demo.secretary",
-  description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
-  activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
-  leagueMembers: "24",
-  partyApplicants: "6",
-  volunteers: "18"
-});
+function getBlankBranchForm() {
+  return {
+    name: "",
+    grade: "",
+    major: "",
+    className: "",
+    secretaryName: "",
+    contact: "",
+    description: "",
+    activityPlan: "",
+    leagueMembers: "0",
+    partyApplicants: "0",
+    volunteers: "0"
+  };
+}
+
+const branchForm = ref(getBlankBranchForm());
 const editingBranchId = ref<string | null>(null);
+const branchEditorOpen = ref(false);
 
 const businessTemplateForm = ref({
   name: "党团发展材料模板",
@@ -387,6 +392,22 @@ const branchMutation = useMutation({
   },
   onSuccess: async () => {
     editingBranchId.value = null;
+    branchEditorOpen.value = false;
+    branchForm.value = getBlankBranchForm();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["league-branches"] }),
+      queryClient.invalidateQueries({ queryKey: ["students"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
+const branchDeleteMutation = useMutation({
+  mutationFn: async (id: string) => (await http.delete(`/league-branches/${id}`)).data,
+  onSuccess: async () => {
+    editingBranchId.value = null;
+    branchEditorOpen.value = false;
+    branchForm.value = getBlankBranchForm();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["league-branches"] }),
       queryClient.invalidateQueries({ queryKey: ["students"] }),
@@ -511,6 +532,19 @@ const policyStatusMutation = useMutation({
   }
 });
 
+const policyDeleteMutation = useMutation({
+  mutationFn: async (id: string) => (await http.delete(`/policies/${id}`)).data,
+  onSuccess: async () => {
+    if (editingPolicyId.value === policyDeleteMutation.data.value?.id) {
+      resetPolicyForm();
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["policies"] }),
+      queryClient.invalidateQueries({ queryKey: ["logs"] })
+    ]);
+  }
+});
+
 const noticeMutation = useMutation({
   mutationFn: async () =>
     (
@@ -553,6 +587,10 @@ const branchErrorMessage = computed(() =>
   normalizeError(branchMutation.error.value, "班团组织保存失败。")
 );
 
+const branchDeleteErrorMessage = computed(() =>
+  normalizeError(branchDeleteMutation.error.value, "班团组织删除失败。")
+);
+
 const businessTemplateErrorMessage = computed(() =>
   normalizeError(businessTemplateMutation.error.value, "业务模板保存失败。")
 );
@@ -563,6 +601,14 @@ const policyErrorMessage = computed(() =>
 
 const policyExportErrorMessage = computed(() =>
   normalizeError(policyExportMutation.error.value, "政策台账导出失败。")
+);
+
+const policyDeleteErrorMessage = computed(() =>
+  normalizeError(policyDeleteMutation.error.value, "政策删除失败。")
+);
+
+const logsExportErrorMessage = computed(() =>
+  normalizeError(logsExportMutation.error.value, "操作日志导出失败。")
 );
 
 const noticeErrorMessage = computed(() =>
@@ -592,6 +638,7 @@ const logActionLabels: Record<string, string> = {
   "students.profile_change.reject": "驳回画像变更",
   "league_branches.create": "新增班团组织",
   "league_branches.update": "更新班团组织",
+  "league_branches.delete": "删除班团组织",
   "business_templates.create": "新增业务模板",
   "business_templates.update": "更新业务模板",
   "business_templates.enable": "启用业务模板",
@@ -601,6 +648,7 @@ const logActionLabels: Record<string, string> = {
   "policies.update": "编辑政策",
   "policies.activate": "启用政策",
   "policies.deactivate": "停用政策",
+  "policies.delete": "删除政策",
   "policies.export": "导出政策台账",
   "notices.publish": "发布通知",
   "approvals.create": "创建审批",
@@ -690,6 +738,9 @@ function normalizeError(error: unknown, fallback: string) {
   }
 
   if (isAxiosError(error)) {
+    if (error.response?.status === 413) {
+      return "文件过大，请确认单文件不超过 30MB。";
+    }
     const message = error.response?.data?.message;
     if (Array.isArray(message)) {
       return message.join("；");
@@ -771,6 +822,7 @@ function startEditBranch(branch: {
   memberSummary?: Record<string, unknown> | null;
 }) {
   editingBranchId.value = branch.id;
+  branchEditorOpen.value = true;
   branchForm.value = {
     name: branch.name,
     grade: branch.grade,
@@ -786,21 +838,23 @@ function startEditBranch(branch: {
   };
 }
 
+function openNewBranchEditor() {
+  editingBranchId.value = null;
+  branchForm.value = getBlankBranchForm();
+  branchEditorOpen.value = true;
+}
+
 function resetBranchForm() {
   editingBranchId.value = null;
-  branchForm.value = {
-    name: "2023级软件工程 SE-1 班团支部",
-    grade: "2023",
-    major: "软件工程",
-    className: "SE-1",
-    secretaryName: "班团骨干",
-    contact: "demo.secretary",
-    description: "负责班级团员发展、团学活动、志愿服务和组织生活记录维护。",
-    activityPlan: "本月重点推进团学活动考勤复核、入党积极分子材料整理和志愿服务时长汇总。",
-    leagueMembers: "24",
-    partyApplicants: "6",
-    volunteers: "18"
-  };
+  branchEditorOpen.value = false;
+  branchForm.value = getBlankBranchForm();
+}
+
+function deleteEditingBranch() {
+  if (!editingBranchId.value) {
+    return;
+  }
+  branchDeleteMutation.mutate(editingBranchId.value);
 }
 
 function startEditBusinessTemplate(template: {
@@ -1013,21 +1067,52 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
       </section>
     </section>
 
-    <section v-if="isAdminSection('organizations')" class="dual-panel">
+    <section v-if="isAdminSection('organizations')" class="module-list">
       <section class="import-panel">
         <div class="panel-heading">
           <div>
             <strong>班团组织维护</strong>
             <span>班团骨干可维护本人负责班级，管理员和教师可维护全部班团组织。</span>
           </div>
-          <button type="button" class="primary-button" :disabled="branchMutation.isPending.value" @click="branchMutation.mutate()">
-            {{ branchMutation.isPending.value ? "保存中..." : editingBranchId ? "保存组织" : "新增组织" }}
-          </button>
+          <button type="button" class="primary-button" @click="openNewBranchEditor">新增组织</button>
         </div>
+        <p v-if="branchMutation.data.value" class="status-line success">
+          已保存班团组织：{{ branchMutation.data.value.name }}。
+        </p>
+        <p v-if="branchDeleteMutation.data.value" class="status-line success">
+          已删除班团组织：{{ branchDeleteMutation.data.value.name }}。
+        </p>
+        <p v-if="branchErrorMessage" class="status-line error">{{ branchErrorMessage }}</p>
+        <p v-if="branchDeleteErrorMessage" class="status-line error">{{ branchDeleteErrorMessage }}</p>
+        <article v-for="branch in leagueBranchesQuery.data.value ?? []" :key="branch.id" class="module-card compact-card">
+          <div class="policy-card-heading">
+            <strong>{{ branch.name }}</strong>
+            <span class="policy-status">{{ branch.memberCount }} 人</span>
+          </div>
+          <span>{{ branch.grade }} | {{ branch.major }} | {{ branch.className }}</span>
+          <span>负责人：{{ branch.secretaryName ?? "未填写" }} | {{ branch.contact ?? "无联系方式" }}</span>
+          <span v-if="branch.description">说明：{{ branch.description }}</span>
+          <span v-if="branch.activityPlan">计划：{{ branch.activityPlan }}</span>
+          <span v-if="branch.memberSummary">
+            团员 {{ branch.memberSummary.leagueMembers ?? 0 }}，
+            入党积极分子 {{ branch.memberSummary.partyApplicants ?? 0 }}，
+            志愿服务骨干 {{ branch.memberSummary.volunteers ?? 0 }}
+          </span>
+          <div class="action-row">
+            <button type="button" class="secondary-button" @click="startEditBranch(branch)">编辑</button>
+          </div>
+        </article>
+      </section>
+    </section>
 
-        <div v-if="editingBranchId" class="action-row">
-          <span class="status-line">正在编辑已有班团组织。</span>
-          <button type="button" class="secondary-button" @click="resetBranchForm">取消编辑</button>
+    <div v-if="branchEditorOpen" class="modal-backdrop">
+      <section class="modal-panel">
+        <div class="panel-heading">
+          <div>
+            <strong>{{ editingBranchId ? "编辑组织" : "新增组织" }}</strong>
+            <span>维护班团组织基础信息、负责人和近期工作计划。</span>
+          </div>
+          <button type="button" class="secondary-button" @click="resetBranchForm">关闭</button>
         </div>
 
         <label class="field">
@@ -1081,39 +1166,22 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
           </label>
         </div>
 
-        <p v-if="branchMutation.data.value" class="status-line success">
-          已保存班团组织：{{ branchMutation.data.value.name }}。
-        </p>
-        <p v-if="branchErrorMessage" class="status-line error">{{ branchErrorMessage }}</p>
-      </section>
-
-      <section class="import-panel">
-        <div class="panel-heading">
-          <div>
-            <strong>组织信息台账</strong>
-            <span>展示班团组织、负责人、成员绑定和近期计划。</span>
-          </div>
+        <div class="action-row">
+          <button type="button" class="primary-button" :disabled="branchMutation.isPending.value" @click="branchMutation.mutate()">
+            {{ branchMutation.isPending.value ? "保存中..." : "保存组织" }}
+          </button>
+          <button
+            v-if="editingBranchId"
+            type="button"
+            class="danger-button"
+            :disabled="branchDeleteMutation.isPending.value"
+            @click="deleteEditingBranch"
+          >
+            {{ branchDeleteMutation.isPending.value ? "删除中..." : "删除组织" }}
+          </button>
         </div>
-        <article v-for="branch in leagueBranchesQuery.data.value ?? []" :key="branch.id" class="module-card compact-card">
-          <div class="policy-card-heading">
-            <strong>{{ branch.name }}</strong>
-            <span class="policy-status">{{ branch.memberCount }} 人</span>
-          </div>
-          <span>{{ branch.grade }} | {{ branch.major }} | {{ branch.className }}</span>
-          <span>负责人：{{ branch.secretaryName ?? "未填写" }} | {{ branch.contact ?? "无联系方式" }}</span>
-          <span v-if="branch.description">说明：{{ branch.description }}</span>
-          <span v-if="branch.activityPlan">计划：{{ branch.activityPlan }}</span>
-          <span v-if="branch.memberSummary">
-            团员 {{ branch.memberSummary.leagueMembers ?? 0 }}，
-            入党积极分子 {{ branch.memberSummary.partyApplicants ?? 0 }}，
-            志愿服务骨干 {{ branch.memberSummary.volunteers ?? 0 }}
-          </span>
-          <div class="action-row">
-            <button type="button" class="secondary-button" @click="startEditBranch(branch)">编辑</button>
-          </div>
-        </article>
       </section>
-    </section>
+    </div>
 
     <section v-if="isAdminSection('templates')" class="dual-panel">
       <section class="import-panel">
@@ -1270,6 +1338,9 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
         <p v-if="policyExportErrorMessage" class="status-line error">
           {{ policyExportErrorMessage }}
         </p>
+        <p v-if="policyDeleteErrorMessage" class="status-line error">
+          {{ policyDeleteErrorMessage }}
+        </p>
 
         <article v-for="policy in policiesQuery.data.value ?? []" :key="policy.id" class="module-card compact-card">
           <div class="policy-card-heading">
@@ -1291,6 +1362,14 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
               @click="policyStatusMutation.mutate({ id: policy.id, status: policy.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE' })"
             >
               {{ policy.status === "INACTIVE" ? "启用" : "停用" }}
+            </button>
+            <button
+              type="button"
+              class="danger-button"
+              :disabled="policyDeleteMutation.isPending.value"
+              @click="policyDeleteMutation.mutate(policy.id)"
+            >
+              删除
             </button>
           </div>
         </article>
@@ -1463,6 +1542,8 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
           <input v-model="logFilter.endDate" type="date" />
         </label>
       </div>
+
+      <p v-if="logsExportErrorMessage" class="status-line error">{{ logsExportErrorMessage }}</p>
 
       <article v-for="log in (logsQuery.data.value?.data ?? [])" :key="log.id" class="module-card compact-card">
         <strong>{{ logActionLabels[log.action] ?? log.action }}</strong>
@@ -1699,10 +1780,49 @@ function downloadBlob(blobPart: BlobPart, fileName: string) {
   cursor: pointer;
 }
 
+.danger-button {
+  justify-self: flex-start;
+  border: 1px solid rgba(157, 0, 0, 0.32);
+  padding: 11px 16px;
+  background: #fff2f0;
+  color: var(--ruc-red);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .primary-button:disabled,
-.secondary-button:disabled {
+.secondary-button:disabled,
+.danger-button:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(24, 18, 16, 0.48);
+}
+
+.modal-panel {
+  display: grid;
+  gap: 16px;
+  width: min(860px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 24px;
+  background: #fffaf2;
+  border: 1px solid var(--ruc-line);
+  border-top: 4px solid var(--ruc-red);
+  box-shadow: 0 24px 80px rgba(43, 29, 24, 0.28);
+}
+
+.modal-panel .field textarea {
+  min-height: 120px;
 }
 
 .status-line {

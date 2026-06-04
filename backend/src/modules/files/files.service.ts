@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { Attachment, StudentStatus } from "@prisma/client";
 import { createReadStream } from "fs";
-import { mkdir, stat, writeFile } from "fs/promises";
+import { mkdir, stat, unlink, writeFile } from "fs/promises";
 import { dirname, isAbsolute, join, normalize, relative } from "path";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -140,6 +140,30 @@ export class FilesService {
     };
   }
 
+  async removeStoredAttachment(id: string) {
+    const attachment = await this.prisma.attachment.findUnique({
+      where: {
+        id
+      }
+    });
+
+    if (!attachment) {
+      return;
+    }
+
+    await this.prisma.attachment.delete({
+      where: {
+        id
+      }
+    });
+
+    try {
+      await unlink(this.resolveFilePath(attachment.fileKey));
+    } catch {
+      // The database record is authoritative; missing files should not block record deletion.
+    }
+  }
+
   private async buildAttachmentWhere(
     currentUser: AuthUser,
     filters: { ownerType?: string; ownerId?: string }
@@ -268,8 +292,20 @@ export class FilesService {
   }
 
   private safeFileName(fileName: string): string {
-    const cleaned = fileName.replace(/[\\/]/g, "-").replace(/\s+/g, "-").trim();
+    const decodedName = this.decodeMojibakeFileName(fileName);
+    const cleaned = decodedName.replace(/[\\/]/g, "-").replace(/\s+/g, "-").trim();
     return cleaned || "attachment.bin";
+  }
+
+  private decodeMojibakeFileName(fileName: string): string {
+    if (!/[ÃÂåæçéèäöüï�]/.test(fileName)) {
+      return fileName;
+    }
+
+    const decoded = Buffer.from(fileName, "latin1").toString("utf8");
+    const originalBadChars = (fileName.match(/�/g) ?? []).length;
+    const decodedBadChars = (decoded.match(/�/g) ?? []).length;
+    return decodedBadChars <= originalBadChars ? decoded : fileName;
   }
 
   private resolveFilePath(fileKey: string): string {

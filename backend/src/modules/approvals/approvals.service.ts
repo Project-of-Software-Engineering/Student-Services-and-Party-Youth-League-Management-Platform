@@ -694,7 +694,7 @@ export class ApprovalsService {
       throw new BadRequestException("当前审批单不在可审批状态。");
     }
 
-    if (this.hasAnyRole(currentUser, [currentStep.roleCode, "admin"])) {
+    if (this.hasAnyRole(currentUser, [currentStep.roleCode])) {
       return;
     }
 

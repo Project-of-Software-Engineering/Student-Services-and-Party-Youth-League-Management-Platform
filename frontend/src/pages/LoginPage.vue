@@ -16,8 +16,8 @@ const router = useRouter();
 const session = useSessionStore();
 session.hydrate();
 
-const username = ref("demo.admin");
-const password = ref("demo1234");
+const username = ref("");
+const password = ref("");
 const errorMessage = ref("");
 const loading = ref(false);
 

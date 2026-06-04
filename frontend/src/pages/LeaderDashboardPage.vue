@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { isAxiosError } from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "@/components/AppShell.vue";
 import { http } from "@/services/http";
@@ -183,7 +184,7 @@ function canDecide(approval: ApprovalItem) {
   }
 
   const roles = session.user?.roles ?? [];
-  return roles.includes("admin") || (roles as string[]).includes(step.roleCode);
+  return (roles as string[]).includes(step.roleCode);
 }
 
 function decide(id: string, action: DecisionAction) {
@@ -242,6 +243,18 @@ function formatFileSize(size: number) {
 function normalizeError(error: unknown, fallback: string) {
   if (!error) {
     return "";
+  }
+  if (isAxiosError(error)) {
+    if (error.response?.status === 413) {
+      return "文件过大，请确认单文件不超过 30MB。";
+    }
+    const message = error.response?.data?.message;
+    if (Array.isArray(message)) {
+      return message.join("；");
+    }
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
   }
   if (error instanceof Error) {
     return error.message;

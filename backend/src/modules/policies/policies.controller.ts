@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -127,5 +128,11 @@ export class PoliciesController {
   @Roles("admin", "teacher", "leader")
   deactivate(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
     return this.policiesService.setStatus(id, PolicyStatus.INACTIVE, currentUser);
+  }
+
+  @Delete(":id")
+  @Roles("admin", "teacher", "leader")
+  remove(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
+    return this.policiesService.remove(id, currentUser);
   }
 }

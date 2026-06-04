@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -32,5 +32,11 @@ export class LeagueBranchesController {
     @CurrentUser() currentUser: AuthUser
   ) {
     return this.leagueBranchesService.update(id, dto, currentUser);
+  }
+
+  @Delete(":id")
+  @Roles("admin", "teacher", "league_secretary")
+  remove(@Param("id") id: string, @CurrentUser() currentUser: AuthUser) {
+    return this.leagueBranchesService.remove(id, currentUser);
   }
 }

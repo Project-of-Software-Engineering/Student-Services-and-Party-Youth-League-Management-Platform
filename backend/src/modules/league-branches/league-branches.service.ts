@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AuthUser } from "../auth/interfaces/auth-user.interface";
@@ -60,12 +60,7 @@ export class LeagueBranchesService {
 
   async create(dto: UpsertLeagueBranchDto, currentUser: AuthUser) {
     this.assertCanManageAll(currentUser);
-    const branch = await this.prisma.leagueBranch.create({
-      data: {
-        ...this.toCreateData(dto),
-        maintainedById: currentUser.id
-      }
-    });
+    const branch = await this.createBranch(dto, currentUser);
 
     await this.syncStudents(branch.id, dto);
     await this.log("league_branches.create", branch.id, dto, currentUser);
@@ -79,13 +74,37 @@ export class LeagueBranchesService {
     }
     this.assertCanManageBranch(existing, currentUser);
 
-    await this.prisma.leagueBranch.update({
-      where: { id },
-      data: this.toUpdateData(dto)
-    });
+    await this.updateBranch(id, dto);
     await this.syncStudents(id, dto);
     await this.log("league_branches.update", id, dto, currentUser);
     return this.findOne(id, currentUser);
+  }
+
+  async remove(id: string, currentUser: AuthUser) {
+    const existing = await this.prisma.leagueBranch.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException("班团组织不存在。");
+    }
+    this.assertCanManageBranch(existing, currentUser);
+
+    await this.prisma.leagueBranch.delete({ where: { id } });
+    await this.logsService.createOperationLog({
+      action: "league_branches.delete",
+      targetType: "LeagueBranch",
+      targetId: id,
+      operatorId: currentUser.id,
+      detail: {
+        name: existing.name,
+        grade: existing.grade,
+        major: existing.major,
+        className: existing.className
+      }
+    });
+
+    return {
+      id,
+      name: existing.name
+    };
   }
 
   private async findOne(id: string, currentUser: AuthUser) {
@@ -146,6 +165,32 @@ export class LeagueBranchesService {
     return (value ?? {}) as Prisma.InputJsonObject;
   }
 
+  private async createBranch(dto: UpsertLeagueBranchDto, currentUser: AuthUser) {
+    try {
+      return await this.prisma.leagueBranch.create({
+        data: {
+          ...this.toCreateData(dto),
+          maintainedById: currentUser.id
+        }
+      });
+    } catch (error) {
+      this.handleUniqueBranchError(error);
+      throw error;
+    }
+  }
+
+  private async updateBranch(id: string, dto: UpsertLeagueBranchDto) {
+    try {
+      return await this.prisma.leagueBranch.update({
+        where: { id },
+        data: this.toUpdateData(dto)
+      });
+    } catch (error) {
+      this.handleUniqueBranchError(error);
+      throw error;
+    }
+  }
+
   private async syncStudents(branchId: string, dto: UpsertLeagueBranchDto) {
     await this.prisma.student.updateMany({
       where: {
@@ -202,5 +247,14 @@ export class LeagueBranchesService {
   private hasAnyRole(currentUser: AuthUser, roles: string[]) {
     const allowed = new Set(roles);
     return currentUser.roles.some((role) => allowed.has(role));
+  }
+
+  private handleUniqueBranchError(error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new BadRequestException("同一年级、专业和班级的班团组织已存在。");
+    }
   }
 }

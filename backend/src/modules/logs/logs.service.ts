@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma, User } from "@prisma/client";
 import * as ExcelJS from "exceljs";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -118,10 +118,32 @@ export class LogsService {
     if (query.operatorId) where.operatorId = query.operatorId;
     if (query.startDate || query.endDate) {
       where.createdAt = {};
-      if (query.startDate) where.createdAt.gte = new Date(query.startDate);
-      if (query.endDate) where.createdAt.lte = new Date(query.endDate);
+      if (query.startDate) where.createdAt.gte = this.parseDateFilter(query.startDate, false);
+      if (query.endDate) where.createdAt.lte = this.parseDateFilter(query.endDate, true);
     }
     return where;
+  }
+
+  private parseDateFilter(value: string, endOfDay: boolean): Date {
+    const trimmed = value.trim();
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    const parsed = dateOnlyMatch
+      ? new Date(
+          Number(dateOnlyMatch[1]),
+          Number(dateOnlyMatch[2]) - 1,
+          Number(dateOnlyMatch[3]),
+          endOfDay ? 23 : 0,
+          endOfDay ? 59 : 0,
+          endOfDay ? 59 : 0,
+          endOfDay ? 999 : 0
+        )
+      : new Date(trimmed);
+
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException("日志时间筛选格式不正确。");
+    }
+
+    return parsed;
   }
 
   private assertCanAudit(currentUser: AuthUser) {
